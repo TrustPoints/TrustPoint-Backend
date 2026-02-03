@@ -1,0 +1,66 @@
+# TrustPoints Backend Docker Compose
+# Orchestrates Flask API and MongoDB services
+
+version: '3.8'
+
+services:
+  # Flask API Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trustpoints-api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=${FLASK_ENV}
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - MONGO_URI=${MONGO_URI}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS}
+      - SECRET_KEY=${SECRET_KEY}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - trustpoints-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # MongoDB Service
+  mongodb:
+    image: mongo:7.0
+    container_name: trustpoints-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    environment:
+      - MONGO_INITDB_DATABASE=trustpoints
+    networks:
+      - trustpoints-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+# Volumes for data persistence
+volumes:
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
+
+# Custom network
+networks:
+  trustpoints-network:
+    driver: bridge
