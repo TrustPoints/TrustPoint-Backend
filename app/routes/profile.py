@@ -167,3 +167,135 @@ def update_profile():
             error_code="server_error",
             status_code=500
         )
+
+
+@profile_bp.route('/profile/change-password', methods=['POST'])
+@token_required
+def change_password():
+    """
+    Change current user's password
+    
+    Headers:
+        Authorization: Bearer <token>
+    
+    Request Body:
+        {
+            "old_password": "string" (required),
+            "new_password": "string" (required),
+            "confirm_password": "string" (required)
+        }
+    
+    Returns:
+        200: Password changed successfully
+        400: Invalid data / Password mismatch
+        401: Unauthorized / Wrong old password
+        404: User not found
+    """
+    try:
+        user_id = get_current_user_id()
+        
+        if not user_id:
+            return error_response(
+                message="User tidak terautentikasi",
+                error_code="unauthorized",
+                status_code=401
+            )
+        
+        data = request.get_json()
+        
+        if not data:
+            return error_response(
+                message="Data tidak ditemukan",
+                error_code="missing_data",
+                status_code=400
+            )
+        
+        # Validate required fields
+        old_password = data.get('old_password', '').strip()
+        new_password = data.get('new_password', '').strip()
+        confirm_password = data.get('confirm_password', '').strip()
+        
+        if not old_password:
+            return error_response(
+                message="Password lama harus diisi",
+                error_code="missing_old_password",
+                status_code=400
+            )
+        
+        if not new_password:
+            return error_response(
+                message="Password baru harus diisi",
+                error_code="missing_new_password",
+                status_code=400
+            )
+        
+        if not confirm_password:
+            return error_response(
+                message="Konfirmasi password harus diisi",
+                error_code="missing_confirm_password",
+                status_code=400
+            )
+        
+        # Validate password match
+        if new_password != confirm_password:
+            return error_response(
+                message="Password baru dan konfirmasi password tidak sama",
+                error_code="password_mismatch",
+                status_code=400
+            )
+        
+        # Validate password length
+        if len(new_password) < 6:
+            return error_response(
+                message="Password baru minimal 6 karakter",
+                error_code="password_too_short",
+                status_code=400
+            )
+        
+        # Check if new password is same as old password
+        if old_password == new_password:
+            return error_response(
+                message="Password baru tidak boleh sama dengan password lama",
+                error_code="same_password",
+                status_code=400
+            )
+        
+        # Get MongoDB from app context
+        mongo = current_app.extensions.get('pymongo')
+        if not mongo:
+            return error_response(
+                message="Database tidak tersedia",
+                error_code="database_error",
+                status_code=500
+            )
+        
+        user_model = User(mongo.db)
+        
+        # Change password
+        result = user_model.change_password(user_id, old_password, new_password)
+        
+        if not result['success']:
+            if result['error'] == 'Current password is incorrect':
+                return error_response(
+                    message="Password lama tidak sesuai",
+                    error_code="wrong_old_password",
+                    status_code=401
+                )
+            return error_response(
+                message=result.get('error', 'Gagal mengubah password'),
+                error_code="change_password_failed",
+                status_code=500
+            )
+        
+        return success_response(
+            data=None,
+            message="Password berhasil diubah"
+        )
+        
+    except Exception as e:
+        current_app.logger.error(f"Change password error: {str(e)}")
+        return error_response(
+            message="Terjadi kesalahan saat mengubah password",
+            error_code="server_error",
+            status_code=500
+        )

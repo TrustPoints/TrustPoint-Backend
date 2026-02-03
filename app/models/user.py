@@ -82,6 +82,36 @@ class User:
     def email_exists(self, email: str) -> bool:
         return self.collection.find_one({'email': email.lower().strip()}) is not None
     
+    def change_password(self, user_id: str, old_password: str, new_password: str) -> dict:
+        """Change user password after verifying old password"""
+        try:
+            # Get user with password
+            user = self.collection.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return {'success': False, 'error': 'User not found'}
+            
+            # Verify old password
+            if not self.verify_password(old_password, user['password']):
+                return {'success': False, 'error': 'Current password is incorrect'}
+            
+            # Hash new password and update
+            new_hashed = self.hash_password(new_password)
+            result = self.collection.update_one(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$set': {
+                        'password': new_hashed,
+                        'updated_at': datetime.utcnow()
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                return {'success': True}
+            return {'success': False, 'error': 'Failed to update password'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
     @staticmethod
     def _sanitize_user(user: dict) -> dict:
         if user:
