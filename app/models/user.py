@@ -35,6 +35,7 @@ class User:
             'profile_picture': None,
             'trust_score': 0,
             'language_preference': 'id',
+            'default_address': None,  # {address: str, latitude: float, longitude: float}
             'created_at': now,
             'updated_at': now
         }
@@ -59,7 +60,7 @@ class User:
     
     def update_profile(self, user_id: str, update_data: dict) -> dict:
         # Only allow specific fields to be updated
-        allowed_fields = {'full_name', 'profile_picture', 'language_preference'}
+        allowed_fields = {'full_name', 'profile_picture', 'language_preference', 'default_address'}
         filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
         
         if not filtered_data:

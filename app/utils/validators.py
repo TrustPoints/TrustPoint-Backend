@@ -162,4 +162,259 @@ def validate_profile_update(data: dict) -> Tuple[bool, List[str]]:
         if not isinstance(url, str) or len(url) > 500:
             errors.append("URL foto profil tidak valid atau terlalu panjang")
     
+    # Validate default_address if provided
+    if 'default_address' in data and data['default_address']:
+        addr = data['default_address']
+        if not isinstance(addr, dict):
+            errors.append("Format alamat tidak valid")
+        else:
+            if 'address' not in addr or not addr['address']:
+                errors.append("Alamat wajib diisi")
+            elif len(addr['address']) > 500:
+                errors.append("Alamat terlalu panjang (maksimal 500 karakter)")
+            
+            if 'latitude' in addr and 'longitude' in addr:
+                is_valid, error = validate_coordinates(addr['latitude'], addr['longitude'])
+                if not is_valid:
+                    errors.append(error)
+            else:
+                errors.append("Koordinat latitude dan longitude wajib diisi")
+    
     return len(errors) == 0, errors
+
+
+# ============================================
+# ORDER VALIDATORS
+# ============================================
+
+VALID_CATEGORIES = ['FOOD', 'DOCUMENT', 'ELECTRONICS', 'FASHION', 'GROCERY', 'MEDICINE', 'OTHER']
+
+
+def validate_coordinates(lat: float, lng: float) -> Tuple[bool, Optional[str]]:
+    """
+    Validate latitude and longitude coordinates
+    
+    Args:
+        lat: Latitude (-90 to 90)
+        lng: Longitude (-180 to 180)
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return False, "Koordinat harus berupa angka"
+    
+    if not (-90 <= lat <= 90):
+        return False, "Latitude harus antara -90 dan 90"
+    
+    if not (-180 <= lng <= 180):
+        return False, "Longitude harus antara -180 dan 180"
+    
+    return True, None
+
+
+def validate_item_data(item: dict) -> Tuple[bool, List[str]]:
+    """
+    Validate item data for order creation
+    
+    Args:
+        item: Item data dictionary
+        
+    Returns:
+        Tuple of (is_valid, list_of_errors)
+    """
+    errors = []
+    
+    if not item:
+        return False, ["Data item wajib diisi"]
+    
+    # Validate item name
+    name = item.get('name', '')
+    if not name or len(name.strip()) < 2:
+        errors.append("Nama barang minimal 2 karakter")
+    if len(name) > 100:
+        errors.append("Nama barang maksimal 100 karakter")
+    
+    # Validate category
+    category = item.get('category', 'OTHER')
+    if category not in VALID_CATEGORIES:
+        errors.append(f"Kategori harus salah satu dari: {', '.join(VALID_CATEGORIES)}")
+    
+    # Validate weight
+    weight = item.get('weight', 0)
+    try:
+        weight = float(weight)
+        if weight < 0:
+            errors.append("Berat tidak boleh negatif")
+        if weight > 50:
+            errors.append("Berat maksimal 50 kg")
+    except (TypeError, ValueError):
+        errors.append("Berat harus berupa angka")
+    
+    # Validate photo_url if provided
+    photo_url = item.get('photo_url')
+    if photo_url and (not isinstance(photo_url, str) or len(photo_url) > 500):
+        errors.append("URL foto tidak valid atau terlalu panjang")
+    
+    # Validate description
+    description = item.get('description', '')
+    if len(description) > 500:
+        errors.append("Deskripsi maksimal 500 karakter")
+    
+    return len(errors) == 0, errors
+
+
+def validate_location_data(location: dict) -> Tuple[bool, List[str]]:
+    """
+    Validate location data for order creation
+    
+    Args:
+        location: Location data dictionary with pickup and destination
+        
+    Returns:
+        Tuple of (is_valid, list_of_errors)
+    """
+    errors = []
+    
+    if not location:
+        return False, ["Data lokasi wajib diisi"]
+    
+    # Validate pickup
+    pickup = location.get('pickup', {})
+    if not pickup:
+        errors.append("Lokasi pickup wajib diisi")
+    else:
+        if not pickup.get('address') or len(pickup['address'].strip()) < 5:
+            errors.append("Alamat pickup minimal 5 karakter")
+        if len(pickup.get('address', '')) > 300:
+            errors.append("Alamat pickup maksimal 300 karakter")
+        
+        lat = pickup.get('latitude')
+        lng = pickup.get('longitude')
+        if lat is None or lng is None:
+            errors.append("Koordinat pickup wajib diisi")
+        else:
+            is_valid, error = validate_coordinates(lat, lng)
+            if not is_valid:
+                errors.append(f"Koordinat pickup: {error}")
+    
+    # Validate destination
+    destination = location.get('destination', {})
+    if not destination:
+        errors.append("Lokasi tujuan wajib diisi")
+    else:
+        if not destination.get('address') or len(destination['address'].strip()) < 5:
+            errors.append("Alamat tujuan minimal 5 karakter")
+        if len(destination.get('address', '')) > 300:
+            errors.append("Alamat tujuan maksimal 300 karakter")
+        
+        lat = destination.get('latitude')
+        lng = destination.get('longitude')
+        if lat is None or lng is None:
+            errors.append("Koordinat tujuan wajib diisi")
+        else:
+            is_valid, error = validate_coordinates(lat, lng)
+            if not is_valid:
+                errors.append(f"Koordinat tujuan: {error}")
+    
+    return len(errors) == 0, errors
+
+
+def validate_order_creation(data: dict) -> Tuple[bool, List[str]]:
+    """
+    Validate all data for order creation
+    
+    Args:
+        data: Order creation data dictionary
+        
+    Returns:
+        Tuple of (is_valid, list_of_errors)
+    """
+    errors = []
+    
+    # Validate item
+    is_valid, item_errors = validate_item_data(data.get('item', {}))
+    if not is_valid:
+        errors.extend(item_errors)
+    
+    # Validate location
+    is_valid, location_errors = validate_location_data(data.get('location', {}))
+    if not is_valid:
+        errors.extend(location_errors)
+    
+    # Validate distance
+    distance = data.get('distance_km')
+    if distance is None:
+        errors.append("Jarak pengiriman wajib diisi")
+    else:
+        try:
+            distance = float(distance)
+            if distance <= 0:
+                errors.append("Jarak pengiriman harus lebih dari 0")
+            if distance > 100:
+                errors.append("Jarak pengiriman maksimal 100 km")
+        except (TypeError, ValueError):
+            errors.append("Jarak pengiriman harus berupa angka")
+    
+    # Validate notes if provided
+    notes = data.get('notes', '')
+    if notes and len(notes) > 500:
+        errors.append("Catatan maksimal 500 karakter")
+    
+    return len(errors) == 0, errors
+
+
+def validate_nearby_query(lat: str, lng: str, radius: str = None) -> Tuple[bool, List[str], dict]:
+    """
+    Validate nearby search query parameters
+    
+    Args:
+        lat: Latitude string
+        lng: Longitude string
+        radius: Optional radius string in km
+        
+    Returns:
+        Tuple of (is_valid, list_of_errors, parsed_values)
+    """
+    errors = []
+    parsed = {}
+    
+    # Parse and validate latitude
+    if lat is None:
+        errors.append("Parameter 'lat' wajib diisi")
+    else:
+        try:
+            parsed['latitude'] = float(lat)
+            if not (-90 <= parsed['latitude'] <= 90):
+                errors.append("Latitude harus antara -90 dan 90")
+        except ValueError:
+            errors.append("Latitude harus berupa angka")
+    
+    # Parse and validate longitude
+    if lng is None:
+        errors.append("Parameter 'lng' wajib diisi")
+    else:
+        try:
+            parsed['longitude'] = float(lng)
+            if not (-180 <= parsed['longitude'] <= 180):
+                errors.append("Longitude harus antara -180 dan 180")
+        except ValueError:
+            errors.append("Longitude harus berupa angka")
+    
+    # Parse and validate radius (optional, default 10km)
+    if radius is not None:
+        try:
+            parsed['radius'] = float(radius)
+            if parsed['radius'] <= 0:
+                errors.append("Radius harus lebih dari 0")
+            if parsed['radius'] > 50:
+                errors.append("Radius maksimal 50 km")
+        except ValueError:
+            errors.append("Radius harus berupa angka")
+    else:
+        parsed['radius'] = 10.0  # Default 10km
+    
+    return len(errors) == 0, errors, parsed

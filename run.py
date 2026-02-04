@@ -24,9 +24,11 @@ def create_app(config_object=None):
     # Register blueprints
     from app.routes.auth import auth_bp
     from app.routes.profile import profile_bp
+    from app.routes.orders import orders_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
+    app.register_blueprint(orders_bp, url_prefix='/api')
     
     # Health check endpoint
     @app.route('/health', methods=['GET'])
@@ -55,10 +57,28 @@ def create_app(config_object=None):
             'description': 'Backend API for TrustPoints P2P Delivery Application',
             'endpoints': {
                 'health': '/health',
-                'register': '/api/register',
-                'login': '/api/login',
-                'profile': '/api/profile',
-                'profile_edit': '/api/profile/edit'
+                'auth': {
+                    'register': 'POST /api/register',
+                    'login': 'POST /api/login'
+                },
+                'profile': {
+                    'get': 'GET /api/profile',
+                    'edit': 'PUT /api/profile/edit',
+                    'change_password': 'PUT /api/change-password'
+                },
+                'orders': {
+                    'create': 'POST /api/orders',
+                    'get_available': 'GET /api/orders/available',
+                    'get_nearby': 'GET /api/orders/nearby?lat=&lng=&radius=',
+                    'get_detail': 'GET /api/orders/<order_id>',
+                    'claim': 'PUT /api/orders/claim/<order_id>',
+                    'pickup': 'PUT /api/orders/pickup/<order_id>',
+                    'deliver': 'PUT /api/orders/deliver/<order_id>',
+                    'cancel': 'PUT /api/orders/cancel/<order_id>',
+                    'my_orders': 'GET /api/orders/my-orders',
+                    'my_deliveries': 'GET /api/orders/my-deliveries',
+                    'categories': 'GET /api/orders/categories'
+                }
             }
         })
     

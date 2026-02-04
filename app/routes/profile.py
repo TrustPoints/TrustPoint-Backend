@@ -115,7 +115,7 @@ def update_profile():
             return validation_error(errors)
         
         # Check if any valid field is provided
-        valid_fields = {'full_name', 'profile_picture', 'language_preference'}
+        valid_fields = {'full_name', 'profile_picture', 'language_preference', 'default_address'}
         update_data = {k: v for k, v in data.items() if k in valid_fields}
         
         if not update_data:
