@@ -25,10 +25,12 @@ def create_app(config_object=None):
     from app.routes.auth import auth_bp
     from app.routes.profile import profile_bp
     from app.routes.orders import orders_bp
+    from app.routes.chat import chat_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
     app.register_blueprint(orders_bp, url_prefix='/api')
+    app.register_blueprint(chat_bp, url_prefix='/api')
     
     # Health check endpoint
     @app.route('/health', methods=['GET'])
