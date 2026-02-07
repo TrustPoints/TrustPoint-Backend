@@ -50,7 +50,7 @@ def get_messages(order_id):
         
         # Check if order exists and user is participant
         order_model = Order(mongo.db)
-        order = order_model.get_order_by_id(order_id)
+        order = order_model.find_by_object_id(order_id)
         
         if not order:
             return error_response(
@@ -153,7 +153,7 @@ def send_message(order_id):
         
         # Check if order exists and user is participant
         order_model = Order(mongo.db)
-        order = order_model.get_order_by_id(order_id)
+        order = order_model.find_by_object_id(order_id)
         
         if not order:
             return error_response(
@@ -248,7 +248,7 @@ def get_unread_count(order_id):
         
         # Check if order exists and user is participant
         order_model = Order(mongo.db)
-        order = order_model.get_order_by_id(order_id)
+        order = order_model.find_by_object_id(order_id)
         
         if not order:
             return error_response(
@@ -321,7 +321,7 @@ def mark_messages_read(order_id):
         
         # Check if order exists and user is participant
         order_model = Order(mongo.db)
-        order = order_model.get_order_by_id(order_id)
+        order = order_model.find_by_object_id(order_id)
         
         if not order:
             return error_response(

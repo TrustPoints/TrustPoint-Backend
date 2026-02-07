@@ -1,9 +1,18 @@
+# Patch eventlet for compatibility
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, jsonify
 from flask_pymongo import PyMongo
+from flask_socketio import SocketIO
+from flask_cors import CORS
 from app.config import get_config
 
 # Initialize PyMongo
 mongo = PyMongo()
+
+# Initialize SocketIO
+socketio = SocketIO()
 
 
 def create_app(config_object=None):
@@ -15,8 +24,20 @@ def create_app(config_object=None):
     
     app.config.from_object(config_object)
     
+    # Enable CORS
+    CORS(app, resources={r"/*": {"origins": "*"}})
+    
     # Initialize extensions
     mongo.init_app(app)
+    
+    # Initialize SocketIO with CORS
+    socketio.init_app(
+        app,
+        cors_allowed_origins="*",
+        async_mode='eventlet',
+        logger=True,
+        engineio_logger=True
+    )
     
     # Store mongo in extensions for access in routes
     app.extensions['pymongo'] = mongo
@@ -32,6 +53,10 @@ def create_app(config_object=None):
     app.register_blueprint(orders_bp, url_prefix='/api')
     app.register_blueprint(chat_bp, url_prefix='/api')
     
+    # Register Socket.IO events
+    from app.socket_events import register_socket_events
+    register_socket_events(socketio)
+    
     # Health check endpoint
     @app.route('/health', methods=['GET'])
     def health_check():
@@ -46,7 +71,8 @@ def create_app(config_object=None):
         return jsonify({
             'status': 'healthy',
             'service': 'TrustPoints API',
-            'database': db_status
+            'database': db_status,
+            'websocket': 'enabled'
         })
     
     # Root endpoint
@@ -116,4 +142,5 @@ def create_app(config_object=None):
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Run with SocketIO support
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
