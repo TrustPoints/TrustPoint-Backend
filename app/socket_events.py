@@ -1,7 +1,3 @@
-"""
-TrustPoints WebSocket Events
-Handles realtime chat messaging via Socket.IO
-"""
 from flask import current_app, request as flask_request
 from flask_socketio import emit, join_room, leave_room, disconnect
 from app.models.chat import Chat
@@ -12,8 +8,6 @@ import jwt
 
 
 def register_socket_events(socketio):
-    """Register all Socket.IO event handlers"""
-    
     # Store connected users: {user_id: sid}
     connected_users = {}
     
@@ -84,7 +78,6 @@ def register_socket_events(socketio):
     
     @socketio.on('disconnect')
     def handle_disconnect():
-        """Handle client disconnection"""
         try:
             # Remove from connected users
             for user_id, sid in list(connected_users.items()):
@@ -97,7 +90,6 @@ def register_socket_events(socketio):
     
     @socketio.on('join_chat')
     def handle_join_chat(data):
-        """Join a chat room for an order"""
         try:
             order_id = data.get('order_id')
             if not order_id:
@@ -167,7 +159,6 @@ def register_socket_events(socketio):
     
     @socketio.on('leave_chat')
     def handle_leave_chat(data):
-        """Leave a chat room"""
         try:
             order_id = data.get('order_id')
             if not order_id:
@@ -186,7 +177,6 @@ def register_socket_events(socketio):
     
     @socketio.on('send_message')
     def handle_send_message(data):
-        """Send a chat message via WebSocket"""
         try:
             order_id = data.get('order_id')
             message_text = data.get('message', '').strip()
@@ -272,7 +262,6 @@ def register_socket_events(socketio):
     
     @socketio.on('typing')
     def handle_typing(data):
-        """Broadcast typing indicator"""
         try:
             order_id = data.get('order_id')
             is_typing = data.get('is_typing', False)
@@ -302,7 +291,6 @@ def register_socket_events(socketio):
     
     @socketio.on('mark_read')
     def handle_mark_read(data):
-        """Mark messages as read"""
         try:
             order_id = data.get('order_id')
             if not order_id:

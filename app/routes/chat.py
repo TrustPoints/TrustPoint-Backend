@@ -1,7 +1,3 @@
-"""
-TrustPoints Chat Routes
-Handles chat messaging between sender and hunter
-"""
 from flask import Blueprint, request, current_app
 from app.models.chat import Chat
 from app.models.order import Order
@@ -14,22 +10,6 @@ chat_bp = Blueprint('chat', __name__)
 @chat_bp.route('/chat/<order_id>/messages', methods=['GET'])
 @token_required
 def get_messages(order_id):
-    """
-    Get all messages for an order
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Query Params:
-        limit: Maximum messages to return (default: 100)
-        skip: Messages to skip for pagination (default: 0)
-    
-    Returns:
-        200: List of messages
-        401: Unauthorized
-        403: Not authorized to view this chat
-        404: Order not found
-    """
     try:
         user_id = get_current_user_id()
         if not user_id:
@@ -99,24 +79,6 @@ def get_messages(order_id):
 @chat_bp.route('/chat/<order_id>/send', methods=['POST'])
 @token_required
 def send_message(order_id):
-    """
-    Send a chat message
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Request Body:
-        {
-            "message": "string"
-        }
-    
-    Returns:
-        201: Message sent successfully
-        400: Invalid data
-        401: Unauthorized
-        403: Not authorized to send to this chat
-        404: Order not found
-    """
     try:
         user_id = get_current_user_id()
         if not user_id:
@@ -216,18 +178,6 @@ def send_message(order_id):
 @chat_bp.route('/chat/<order_id>/unread', methods=['GET'])
 @token_required
 def get_unread_count(order_id):
-    """
-    Get unread message count for an order
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Returns:
-        200: Unread count
-        401: Unauthorized
-        403: Not authorized
-        404: Order not found
-    """
     try:
         user_id = get_current_user_id()
         if not user_id:
@@ -289,18 +239,6 @@ def get_unread_count(order_id):
 @chat_bp.route('/chat/<order_id>/read', methods=['PUT'])
 @token_required
 def mark_messages_read(order_id):
-    """
-    Mark all messages as read
-    
-    Headers:
-        Authorization: Bearer <token>
-    
-    Returns:
-        200: Messages marked as read
-        401: Unauthorized
-        403: Not authorized
-        404: Order not found
-    """
     try:
         user_id = get_current_user_id()
         if not user_id:

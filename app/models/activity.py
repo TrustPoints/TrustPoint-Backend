@@ -1,13 +1,9 @@
-"""
-TrustPoints Activity Model
-Handles user activity logging for tracking all user actions
-"""
 from datetime import datetime
-from bson import ObjectId
+from enum import Enum
+from typing import Dict, List, Optional
 
 
-class ActivityType:
-    """Activity type constants"""
+class ActivityType(str, Enum):
     ORDER_CREATED = 'ORDER_CREATED'
     ORDER_CLAIMED = 'ORDER_CLAIMED'
     ORDER_PICKED_UP = 'ORDER_PICKED_UP'
@@ -26,46 +22,28 @@ class Activity:
         self.collection = mongo_db.activities
         self._ensure_indexes()
     
-    def _ensure_indexes(self):
-        """Create necessary indexes for efficient querying"""
-        # Index for user_id queries
-        self.collection.create_index("user_id")
-        # Index for created_at for sorting
-        self.collection.create_index([("created_at", -1)])
-        # Compound index for user activities sorted by date
-        self.collection.create_index([("user_id", 1), ("created_at", -1)])
-        # Index for activity type
-        self.collection.create_index("type")
+    def _ensure_indexes(self) -> None:
+        self.collection.create_index('user_id')
+        self.collection.create_index([('created_at', -1)])
+        self.collection.create_index([('user_id', 1), ('created_at', -1)])
+        self.collection.create_index('type')
     
-    def create_activity(self, user_id: str, activity_type: str, title: str, 
-                        description: str = None, points: int = None, 
-                        order_id: str = None, metadata: dict = None) -> dict:
-        """
-        Create a new activity record
-        
-        Args:
-            user_id: ID of the user who performed the activity
-            activity_type: Type of activity (from ActivityType constants)
-            title: Short title of the activity
-            description: Detailed description
-            points: Points earned or spent (positive for earned, negative for spent)
-            order_id: Related order ID if applicable
-            metadata: Additional data related to the activity
-        
-        Returns:
-            Created activity document
-        """
-        now = datetime.utcnow()
-        
+    # ===========================================
+    # Core Activity Operations
+    # ===========================================
+    
+    def create_activity(self, user_id: str, activity_type: str, title: str,
+                        description: Optional[str] = None, points: Optional[int] = None,
+                        order_id: Optional[str] = None, metadata: Optional[Dict] = None) -> Dict:
         activity_doc = {
             'user_id': user_id,
-            'type': activity_type,
+            'type': activity_type.value if isinstance(activity_type, ActivityType) else activity_type,
             'title': title,
             'description': description,
             'points': points,
             'order_id': order_id,
             'metadata': metadata or {},
-            'created_at': now
+            'created_at': datetime.utcnow()
         }
         
         result = self.collection.insert_one(activity_doc)
@@ -73,43 +51,24 @@ class Activity:
         
         return self._format_activity(activity_doc)
     
-    def get_user_activities(self, user_id: str, limit: int = 10, skip: int = 0) -> list:
-        """
-        Get activities for a specific user
-        
-        Args:
-            user_id: ID of the user
-            limit: Maximum number of activities to return
-            skip: Number of activities to skip (for pagination)
-        
-        Returns:
-            List of activity documents
-        """
+    def get_user_activities(self, user_id: str, limit: int = 10, skip: int = 0) -> List[Dict]:
         cursor = self.collection.find(
             {'user_id': user_id}
         ).sort('created_at', -1).skip(skip).limit(limit)
         
-        return [self._format_activity(activity) for activity in cursor]
+        return [self._format_activity(doc) for doc in cursor]
     
-    def get_recent_activities(self, user_id: str, limit: int = 5) -> list:
-        """
-        Get most recent activities for a user (for dashboard display)
-        
-        Args:
-            user_id: ID of the user
-            limit: Maximum number of activities to return
-        
-        Returns:
-            List of activity documents
-        """
+    def get_recent_activities(self, user_id: str, limit: int = 5) -> List[Dict]:
         return self.get_user_activities(user_id, limit=limit, skip=0)
     
     def count_user_activities(self, user_id: str) -> int:
-        """Count total activities for a user"""
         return self.collection.count_documents({'user_id': user_id})
     
-    def log_order_created(self, user_id: str, order_id: str, points_cost: int = 0) -> dict:
-        """Log when user creates a new order"""
+    # ===========================================
+    # Convenience Logging Methods
+    # ===========================================
+    
+    def log_order_created(self, user_id: str, order_id: str, points_cost: int = 0) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.ORDER_CREATED,
@@ -119,8 +78,7 @@ class Activity:
             order_id=order_id
         )
     
-    def log_order_claimed(self, user_id: str, order_id: str) -> dict:
-        """Log when hunter claims an order"""
+    def log_order_claimed(self, user_id: str, order_id: str) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.ORDER_CLAIMED,
@@ -129,8 +87,7 @@ class Activity:
             order_id=order_id
         )
     
-    def log_order_picked_up(self, user_id: str, order_id: str) -> dict:
-        """Log when hunter picks up an order"""
+    def log_order_picked_up(self, user_id: str, order_id: str) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.ORDER_PICKED_UP,
@@ -139,8 +96,7 @@ class Activity:
             order_id=order_id
         )
     
-    def log_order_delivered(self, user_id: str, order_id: str, points_earned: int = 0) -> dict:
-        """Log when hunter delivers an order"""
+    def log_order_delivered(self, user_id: str, order_id: str, points_earned: int = 0) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.ORDER_DELIVERED,
@@ -150,8 +106,7 @@ class Activity:
             order_id=order_id
         )
     
-    def log_order_cancelled(self, user_id: str, order_id: str, refund_points: int = 0) -> dict:
-        """Log when order is cancelled"""
+    def log_order_cancelled(self, user_id: str, order_id: str, refund_points: int = 0) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.ORDER_CANCELLED,
@@ -161,8 +116,7 @@ class Activity:
             order_id=order_id
         )
     
-    def log_points_earned(self, user_id: str, points: int, reason: str = None) -> dict:
-        """Log when user earns points"""
+    def log_points_earned(self, user_id: str, points: int, reason: Optional[str] = None) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.POINTS_EARNED,
@@ -171,8 +125,7 @@ class Activity:
             points=points
         )
     
-    def log_points_spent(self, user_id: str, points: int, reason: str = None) -> dict:
-        """Log when user spends points"""
+    def log_points_spent(self, user_id: str, points: int, reason: Optional[str] = None) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.POINTS_SPENT,
@@ -181,8 +134,7 @@ class Activity:
             points=-points
         )
     
-    def log_points_transferred(self, user_id: str, points: int, recipient_email: str) -> dict:
-        """Log when user transfers points to another user"""
+    def log_points_transferred(self, user_id: str, points: int, recipient_email: str) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.POINTS_TRANSFERRED,
@@ -192,25 +144,31 @@ class Activity:
             metadata={'recipient_email': recipient_email}
         )
     
-    def log_points_received(self, user_id: str, points: int, sender_email: str = None) -> dict:
-        """Log when user receives points from transfer"""
+    def log_points_received(self, user_id: str, points: int, sender_email: Optional[str] = None) -> Dict:
         return self.create_activity(
             user_id=user_id,
             activity_type=ActivityType.POINTS_RECEIVED,
             title='Points Diterima',
-            description=f'Transfer dari pengguna lain' if not sender_email else f'Transfer dari {sender_email}',
+            description=f'Transfer dari {sender_email}' if sender_email else 'Transfer dari pengguna lain',
             points=points,
             metadata={'sender_email': sender_email} if sender_email else {}
         )
     
+    # ===========================================
+    # Data Formatting
+    # ===========================================
+    
     @staticmethod
-    def _format_activity(activity: dict) -> dict:
-        """Format activity document for API response"""
-        if activity:
-            formatted = activity.copy()
-            if '_id' in formatted:
-                formatted['activity_id'] = str(formatted.pop('_id'))
-            if 'created_at' in formatted and isinstance(formatted['created_at'], datetime):
-                formatted['created_at'] = formatted['created_at'].isoformat()
-            return formatted
-        return None
+    def _format_activity(activity: Optional[Dict]) -> Optional[Dict]:
+        if not activity:
+            return None
+        
+        formatted = activity.copy()
+        
+        if '_id' in formatted:
+            formatted['activity_id'] = str(formatted.pop('_id'))
+        
+        if 'created_at' in formatted and isinstance(formatted['created_at'], datetime):
+            formatted['created_at'] = formatted['created_at'].isoformat()
+        
+        return formatted

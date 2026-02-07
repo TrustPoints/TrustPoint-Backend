@@ -1,14 +1,15 @@
-"""
-TrustPoints Order Model
-Handles order/delivery operations with GeoJSON support for location-based queries
-"""
 from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional
 from bson import ObjectId
 import uuid
 
 
-class OrderStatus:
-    """Order status constants"""
+# =============================================================================
+# Enums & Constants
+# =============================================================================
+
+class OrderStatus(str, Enum):
     PENDING = 'PENDING'
     CLAIMED = 'CLAIMED'
     IN_TRANSIT = 'IN_TRANSIT'
@@ -16,8 +17,7 @@ class OrderStatus:
     CANCELLED = 'CANCELLED'
 
 
-class ItemCategory:
-    """Item category constants"""
+class ItemCategory(str, Enum):
     FOOD = 'FOOD'
     DOCUMENT = 'DOCUMENT'
     ELECTRONICS = 'ELECTRONICS'
@@ -27,112 +27,96 @@ class ItemCategory:
     OTHER = 'OTHER'
     
     @classmethod
-    def all_categories(cls):
-        return [cls.FOOD, cls.DOCUMENT, cls.ELECTRONICS, cls.FASHION, 
-                cls.GROCERY, cls.MEDICINE, cls.OTHER]
+    def all_categories(cls) -> List[str]:
+        return [cat.value for cat in cls]
 
+
+# =============================================================================
+# Order Model
+# =============================================================================
 
 class Order:
+    # Pricing constants
+    POINTS_PER_KM: int = 10
+    MIN_POINTS: int = 5
+    MIN_COST: int = 10
+    WEIGHT_SURCHARGE_PER_KG: int = 5
+    FRAGILE_COST_MULTIPLIER: float = 1.2
+    FRAGILE_REWARD_MULTIPLIER: float = 1.5
+    
     def __init__(self, mongo_db):
         self.collection = mongo_db.orders
         self._ensure_indexes()
     
-    def _ensure_indexes(self):
-        """Create necessary indexes including geospatial index"""
-        # Geospatial index for pickup location
-        self.collection.create_index([("location.pickup.coords", "2dsphere")])
-        # Geospatial index for destination location
-        self.collection.create_index([("location.destination.coords", "2dsphere")])
-        # Index for status filtering
-        self.collection.create_index("status")
-        # Index for sender_id
-        self.collection.create_index("sender_id")
-        # Index for hunter_id
-        self.collection.create_index("hunter_id")
-        # Compound index for common queries
-        self.collection.create_index([("status", 1), ("created_at", -1)])
+    def _ensure_indexes(self) -> None:
+        indexes = [
+            ([("location.pickup.coords", "2dsphere")], {}),
+            ([("location.destination.coords", "2dsphere")], {}),
+            ("status", {}),
+            ("sender_id", {}),
+            ("hunter_id", {}),
+            ([("status", 1), ("created_at", -1)], {}),
+        ]
+        for index_spec, options in indexes:
+            self.collection.create_index(index_spec, **options)
+    
+    # =========================================================================
+    # Static Methods - ID Generation & Calculations
+    # =========================================================================
     
     @staticmethod
-    def generate_order_id():
-        """Generate unique order ID"""
+    def generate_order_id() -> str:
         timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         unique_part = str(uuid.uuid4())[:8].upper()
         return f"TP-{timestamp}-{unique_part}"
     
     @staticmethod
-    def create_geojson_point(longitude: float, latitude: float) -> dict:
-        """Create GeoJSON Point from coordinates"""
+    def create_geojson_point(longitude: float, latitude: float) -> Dict:
         return {
             "type": "Point",
-            "coordinates": [longitude, latitude]  # GeoJSON format: [lng, lat]
+            "coordinates": [longitude, latitude]
         }
     
-    @staticmethod
-    def calculate_trust_points(distance_km: float, is_fragile: bool = False) -> int:
-        """Calculate trust points reward for hunter based on distance and item fragility"""
-        base_points = int(distance_km * 10)  # 10 points per km
+    @classmethod
+    def calculate_trust_points(cls, distance_km: float, is_fragile: bool = False) -> int:
+        base_points = int(distance_km * cls.POINTS_PER_KM)
         if is_fragile:
-            base_points = int(base_points * 1.5)  # 50% bonus for fragile items
-        return max(base_points, 5)  # Minimum 5 points
+            base_points = int(base_points * cls.FRAGILE_REWARD_MULTIPLIER)
+        return max(base_points, cls.MIN_POINTS)
     
-    @staticmethod
-    def calculate_delivery_cost(distance_km: float, weight_kg: float = 0, is_fragile: bool = False) -> int:
-        """
-        Calculate delivery cost in points for sender
+    @classmethod
+    def calculate_delivery_cost(cls, distance_km: float, weight_kg: float = 0, 
+                                is_fragile: bool = False) -> int:
+        base_cost = int(distance_km * cls.POINTS_PER_KM)
         
-        Pricing:
-        - Base: 10 points per km
-        - Weight surcharge: +5 points per kg over 1kg
-        - Fragile surcharge: +20%
-        - Minimum cost: 10 points
-        """
-        # Base cost: 10 points per km
-        base_cost = int(distance_km * 10)
-        
-        # Weight surcharge: +5 points per kg over 1kg
         if weight_kg > 1:
-            base_cost += int((weight_kg - 1) * 5)
+            base_cost += int((weight_kg - 1) * cls.WEIGHT_SURCHARGE_PER_KG)
         
-        # Fragile surcharge: +20%
         if is_fragile:
-            base_cost = int(base_cost * 1.2)
+            base_cost = int(base_cost * cls.FRAGILE_COST_MULTIPLIER)
         
-        return max(base_cost, 10)  # Minimum 10 points
+        return max(base_cost, cls.MIN_COST)
     
-    def create_order(self, sender_id: str, item_data: dict, location_data: dict, 
-                     distance_km: float, notes: str = None) -> dict:
-        """
-        Create a new order
-        
-        Args:
-            sender_id: ID of the sender user
-            item_data: Dict containing item details (name, category, weight, photo_url, description, is_fragile)
-            location_data: Dict containing pickup and destination locations
-            distance_km: Distance between pickup and destination in kilometers
-            notes: Optional delivery notes
-        
-        Returns:
-            Created order document
-        """
+    # =========================================================================
+    # CRUD Operations
+    # =========================================================================
+    
+    def create_order(self, sender_id: str, item_data: Dict, location_data: Dict, 
+                     distance_km: float, notes: Optional[str] = None) -> Dict:
         now = datetime.utcnow()
         
-        # Calculate trust points reward for hunter
         is_fragile = item_data.get('is_fragile', False)
         weight_kg = item_data.get('weight', 0)
-        trust_points_reward = self.calculate_trust_points(distance_km, is_fragile)
-        
-        # Calculate delivery cost for sender
-        points_cost = self.calculate_delivery_cost(distance_km, weight_kg, is_fragile)
         
         order_doc = {
             'order_id': self.generate_order_id(),
             'sender_id': sender_id,
             'hunter_id': None,
-            'status': OrderStatus.PENDING,
+            'status': OrderStatus.PENDING.value,
             'item': {
                 'name': item_data.get('name'),
-                'category': item_data.get('category', ItemCategory.OTHER),
-                'weight': weight_kg,  # in kg
+                'category': item_data.get('category', ItemCategory.OTHER.value),
+                'weight': weight_kg,
                 'photo_url': item_data.get('photo_url'),
                 'description': item_data.get('description', ''),
                 'is_fragile': is_fragile
@@ -154,8 +138,8 @@ class Order:
                 }
             },
             'distance_km': round(distance_km, 2),
-            'points_cost': points_cost,  # Cost for sender
-            'trust_points_reward': trust_points_reward,  # Reward for hunter
+            'points_cost': self.calculate_delivery_cost(distance_km, weight_kg, is_fragile),
+            'trust_points_reward': self.calculate_trust_points(distance_km, is_fragile),
             'notes': notes,
             'claimed_at': None,
             'picked_up_at': None,
@@ -169,49 +153,34 @@ class Order:
         
         return self._format_order(order_doc)
     
-    def find_by_id(self, order_id: str) -> dict:
-        """Find order by order_id"""
+    def find_by_id(self, order_id: str) -> Optional[Dict]:
         order = self.collection.find_one({'order_id': order_id})
         return self._format_order(order) if order else None
     
-    def find_by_object_id(self, object_id: str) -> dict:
-        """Find order by MongoDB ObjectId"""
+    def find_by_object_id(self, object_id: str) -> Optional[Dict]:
         try:
             order = self.collection.find_one({'_id': ObjectId(object_id)})
             return self._format_order(order) if order else None
         except Exception:
             return None
     
-    def get_available_orders(self, limit: int = 50, skip: int = 0) -> list:
-        """
-        Get all orders with PENDING status (available for hunters)
-        Sorted by newest first
-        """
+    # =========================================================================
+    # Query Operations
+    # =========================================================================
+    
+    def get_available_orders(self, limit: int = 50, skip: int = 0) -> List[Dict]:
         cursor = self.collection.find(
-            {'status': OrderStatus.PENDING}
+            {'status': OrderStatus.PENDING.value}
         ).sort('created_at', -1).skip(skip).limit(limit)
         
         return [self._format_order(order) for order in cursor]
     
     def get_nearby_orders(self, latitude: float, longitude: float, 
-                          radius_km: float = 10, limit: int = 50) -> list:
-        """
-        Get PENDING orders near a specific location using geospatial query
-        
-        Args:
-            latitude: User's latitude
-            longitude: User's longitude
-            radius_km: Search radius in kilometers (default 10km)
-            limit: Maximum number of results
-        
-        Returns:
-            List of nearby orders sorted by distance
-        """
-        # Convert radius from km to meters
+                          radius_km: float = 10, limit: int = 50) -> List[Dict]:
         radius_meters = radius_km * 1000
         
         cursor = self.collection.find({
-            'status': OrderStatus.PENDING,
+            'status': OrderStatus.PENDING.value,
             'location.pickup.coords': {
                 '$near': {
                     '$geometry': {
@@ -225,23 +194,44 @@ class Order:
         
         return [self._format_order(order) for order in cursor]
     
-    def claim_order(self, order_id: str, hunter_id: str) -> dict:
-        """
-        Hunter claims an order
-        Changes status from PENDING to CLAIMED
-        """
+    def get_sender_orders(self, sender_id: str, status: Optional[str] = None, 
+                          limit: int = 50, skip: int = 0) -> List[Dict]:
+        query = {'sender_id': sender_id}
+        if status:
+            query['status'] = status
+        
+        cursor = self.collection.find(query).sort('created_at', -1).skip(skip).limit(limit)
+        return [self._format_order(order) for order in cursor]
+    
+    def get_hunter_orders(self, hunter_id: str, status: Optional[str] = None,
+                          limit: int = 50, skip: int = 0) -> List[Dict]:
+        query = {'hunter_id': hunter_id}
+        if status:
+            query['status'] = status
+        
+        cursor = self.collection.find(query).sort('created_at', -1).skip(skip).limit(limit)
+        return [self._format_order(order) for order in cursor]
+    
+    def count_available_orders(self) -> int:
+        return self.collection.count_documents({'status': OrderStatus.PENDING.value})
+    
+    # =========================================================================
+    # Status Transitions
+    # =========================================================================
+    
+    def claim_order(self, order_id: str, hunter_id: str) -> Optional[Dict]:
         now = datetime.utcnow()
         
         result = self.collection.find_one_and_update(
             {
                 'order_id': order_id,
-                'status': OrderStatus.PENDING,  # Can only claim pending orders
-                'sender_id': {'$ne': hunter_id}  # Hunter cannot claim own order
+                'status': OrderStatus.PENDING.value,
+                'sender_id': {'$ne': hunter_id}
             },
             {
                 '$set': {
                     'hunter_id': hunter_id,
-                    'status': OrderStatus.CLAIMED,
+                    'status': OrderStatus.CLAIMED.value,
                     'claimed_at': now,
                     'updated_at': now
                 }
@@ -251,22 +241,18 @@ class Order:
         
         return self._format_order(result) if result else None
     
-    def start_delivery(self, order_id: str, hunter_id: str) -> dict:
-        """
-        Hunter starts delivery (picked up the item)
-        Changes status from CLAIMED to IN_TRANSIT
-        """
+    def start_delivery(self, order_id: str, hunter_id: str) -> Optional[Dict]:
         now = datetime.utcnow()
         
         result = self.collection.find_one_and_update(
             {
                 'order_id': order_id,
                 'hunter_id': hunter_id,
-                'status': OrderStatus.CLAIMED
+                'status': OrderStatus.CLAIMED.value
             },
             {
                 '$set': {
-                    'status': OrderStatus.IN_TRANSIT,
+                    'status': OrderStatus.IN_TRANSIT.value,
                     'picked_up_at': now,
                     'updated_at': now
                 }
@@ -276,22 +262,18 @@ class Order:
         
         return self._format_order(result) if result else None
     
-    def complete_delivery(self, order_id: str, hunter_id: str) -> dict:
-        """
-        Hunter completes delivery
-        Changes status from IN_TRANSIT to DELIVERED
-        """
+    def complete_delivery(self, order_id: str, hunter_id: str) -> Optional[Dict]:
         now = datetime.utcnow()
         
         result = self.collection.find_one_and_update(
             {
                 'order_id': order_id,
                 'hunter_id': hunter_id,
-                'status': OrderStatus.IN_TRANSIT
+                'status': OrderStatus.IN_TRANSIT.value
             },
             {
                 '$set': {
-                    'status': OrderStatus.DELIVERED,
+                    'status': OrderStatus.DELIVERED.value,
                     'delivered_at': now,
                     'updated_at': now
                 }
@@ -301,21 +283,18 @@ class Order:
         
         return self._format_order(result) if result else None
     
-    def cancel_order(self, order_id: str, user_id: str) -> dict:
-        """
-        Cancel an order (only sender can cancel, and only if not yet in transit)
-        """
+    def cancel_order(self, order_id: str, user_id: str) -> Optional[Dict]:
         now = datetime.utcnow()
         
         result = self.collection.find_one_and_update(
             {
                 'order_id': order_id,
                 'sender_id': user_id,
-                'status': {'$in': [OrderStatus.PENDING, OrderStatus.CLAIMED]}
+                'status': {'$in': [OrderStatus.PENDING.value, OrderStatus.CLAIMED.value]}
             },
             {
                 '$set': {
-                    'status': OrderStatus.CANCELLED,
+                    'status': OrderStatus.CANCELLED.value,
                     'updated_at': now
                 }
             },
@@ -324,33 +303,12 @@ class Order:
         
         return self._format_order(result) if result else None
     
-    def get_sender_orders(self, sender_id: str, status: str = None, 
-                          limit: int = 50, skip: int = 0) -> list:
-        """Get orders created by a sender"""
-        query = {'sender_id': sender_id}
-        if status:
-            query['status'] = status
-        
-        cursor = self.collection.find(query).sort('created_at', -1).skip(skip).limit(limit)
-        return [self._format_order(order) for order in cursor]
-    
-    def get_hunter_orders(self, hunter_id: str, status: str = None,
-                          limit: int = 50, skip: int = 0) -> list:
-        """Get orders claimed by a hunter"""
-        query = {'hunter_id': hunter_id}
-        if status:
-            query['status'] = status
-        
-        cursor = self.collection.find(query).sort('created_at', -1).skip(skip).limit(limit)
-        return [self._format_order(order) for order in cursor]
-    
-    def count_available_orders(self) -> int:
-        """Count total available (PENDING) orders"""
-        return self.collection.count_documents({'status': OrderStatus.PENDING})
+    # =========================================================================
+    # Formatting
+    # =========================================================================
     
     @staticmethod
-    def _format_order(order: dict) -> dict:
-        """Format order document for API response"""
+    def _format_order(order: Optional[Dict]) -> Optional[Dict]:
         if not order:
             return None
         

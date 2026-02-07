@@ -1,21 +1,8 @@
-"""
-TrustPoints Input Validators
-Validation utilities for user input
-"""
 import re
 from typing import Tuple, List, Optional
 
 
 def validate_email(email: str) -> Tuple[bool, Optional[str]]:
-    """
-    Validate email format
-    
-    Args:
-        email: Email string to validate
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
     if not email:
         return False, "Email wajib diisi"
     
@@ -29,21 +16,6 @@ def validate_email(email: str) -> Tuple[bool, Optional[str]]:
 
 
 def validate_password(password: str) -> Tuple[bool, Optional[str]]:
-    """
-    Validate password strength
-    
-    Requirements:
-    - Minimum 8 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    
-    Args:
-        password: Password string to validate
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
     if not password:
         return False, "Password wajib diisi"
     
@@ -63,15 +35,6 @@ def validate_password(password: str) -> Tuple[bool, Optional[str]]:
 
 
 def validate_full_name(full_name: str) -> Tuple[bool, Optional[str]]:
-    """
-    Validate full name
-    
-    Args:
-        full_name: Name string to validate
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
     if not full_name:
         return False, "Nama lengkap wajib diisi"
     
@@ -85,16 +48,7 @@ def validate_full_name(full_name: str) -> Tuple[bool, Optional[str]]:
 
 
 def validate_language_preference(language: str) -> Tuple[bool, Optional[str]]:
-    """
-    Validate language preference
-    
-    Args:
-        language: Language code to validate
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    allowed_languages = ['id', 'en']  # Indonesian and English
+    allowed_languages = ['id', 'en'] 
     
     if language and language not in allowed_languages:
         return False, f"Bahasa harus salah satu dari: {', '.join(allowed_languages)}"
@@ -103,15 +57,6 @@ def validate_language_preference(language: str) -> Tuple[bool, Optional[str]]:
 
 
 def validate_registration_data(data: dict) -> Tuple[bool, List[str]]:
-    """
-    Validate all registration data
-    
-    Args:
-        data: Registration data dictionary
-        
-    Returns:
-        Tuple of (is_valid, list_of_errors)
-    """
     errors = []
     
     # Validate full name
@@ -133,15 +78,6 @@ def validate_registration_data(data: dict) -> Tuple[bool, List[str]]:
 
 
 def validate_profile_update(data: dict) -> Tuple[bool, List[str]]:
-    """
-    Validate profile update data
-    
-    Args:
-        data: Profile update data dictionary
-        
-    Returns:
-        Tuple of (is_valid, list_of_errors)
-    """
     errors = []
     
     # Validate full name if provided
@@ -191,16 +127,6 @@ VALID_CATEGORIES = ['FOOD', 'DOCUMENT', 'ELECTRONICS', 'FASHION', 'GROCERY', 'ME
 
 
 def validate_coordinates(lat: float, lng: float) -> Tuple[bool, Optional[str]]:
-    """
-    Validate latitude and longitude coordinates
-    
-    Args:
-        lat: Latitude (-90 to 90)
-        lng: Longitude (-180 to 180)
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
     try:
         lat = float(lat)
         lng = float(lng)
@@ -217,15 +143,6 @@ def validate_coordinates(lat: float, lng: float) -> Tuple[bool, Optional[str]]:
 
 
 def validate_item_data(item: dict) -> Tuple[bool, List[str]]:
-    """
-    Validate item data for order creation
-    
-    Args:
-        item: Item data dictionary
-        
-    Returns:
-        Tuple of (is_valid, list_of_errors)
-    """
     errors = []
     
     if not item:
@@ -268,15 +185,6 @@ def validate_item_data(item: dict) -> Tuple[bool, List[str]]:
 
 
 def validate_location_data(location: dict) -> Tuple[bool, List[str]]:
-    """
-    Validate location data for order creation
-    
-    Args:
-        location: Location data dictionary with pickup and destination
-        
-    Returns:
-        Tuple of (is_valid, list_of_errors)
-    """
     errors = []
     
     if not location:
@@ -324,15 +232,6 @@ def validate_location_data(location: dict) -> Tuple[bool, List[str]]:
 
 
 def validate_order_creation(data: dict) -> Tuple[bool, List[str]]:
-    """
-    Validate all data for order creation
-    
-    Args:
-        data: Order creation data dictionary
-        
-    Returns:
-        Tuple of (is_valid, list_of_errors)
-    """
     errors = []
     
     # Validate item
@@ -368,17 +267,6 @@ def validate_order_creation(data: dict) -> Tuple[bool, List[str]]:
 
 
 def validate_nearby_query(lat: str, lng: str, radius: str = None) -> Tuple[bool, List[str], dict]:
-    """
-    Validate nearby search query parameters
-    
-    Args:
-        lat: Latitude string
-        lng: Longitude string
-        radius: Optional radius string in km
-        
-    Returns:
-        Tuple of (is_valid, list_of_errors, parsed_values)
-    """
     errors = []
     parsed = {}
     

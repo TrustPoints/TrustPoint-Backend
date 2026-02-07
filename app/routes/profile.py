@@ -1,151 +1,105 @@
-"""
-TrustPoints Profile Routes
-Handles user profile operations (protected routes)
-"""
+import logging
 from flask import Blueprint, request, current_app
+
 from app.models.user import User
 from app.utils.auth import token_required, get_current_user_id
-from app.utils.responses import success_response, error_response, validation_error
+from app.utils.responses import (
+    success_response, error_response, validation_error,
+    unauthorized_error, not_found_error, database_error, 
+    missing_data_error, server_error
+)
 from app.utils.validators import validate_profile_update
+
+logger = logging.getLogger(__name__)
 
 profile_bp = Blueprint('profile', __name__)
 
 
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def _get_db():
+    mongo = current_app.extensions.get('pymongo')
+    return mongo.db if mongo else None
+
+
+def _get_authenticated_user_id() -> tuple:
+    user_id = get_current_user_id()
+    if not user_id:
+        return None, unauthorized_error()
+    return user_id, None
+
+
+# =============================================================================
+# Profile Endpoints
+# =============================================================================
+
 @profile_bp.route('/profile', methods=['GET'])
 @token_required
 def get_profile():
-    """
-    Get current user's profile
+    user_id, err = _get_authenticated_user_id()
+    if err:
+        return err
     
-    Headers:
-        Authorization: Bearer <token>
+    db = _get_db()
+    if db is None:
+        return database_error()
     
-    Returns:
-        200: User profile data
-        401: Unauthorized
-        404: User not found
-    """
     try:
-        user_id = get_current_user_id()
-        
-        if not user_id:
-            return error_response(
-                message="User tidak terautentikasi",
-                error_code="unauthorized",
-                status_code=401
-            )
-        
-        # Get MongoDB from app context
-        mongo = current_app.extensions.get('pymongo')
-        if not mongo:
-            return error_response(
-                message="Database tidak tersedia",
-                error_code="database_error",
-                status_code=500
-            )
-        
-        user_model = User(mongo.db)
+        user_model = User(db)
         user = user_model.find_by_id(user_id)
         
         if not user:
-            return error_response(
-                message="User tidak ditemukan",
-                error_code="user_not_found",
-                status_code=404
-            )
+            return not_found_error("User")
         
         return success_response(
             data={'user': user},
             message="Profil berhasil diambil"
         )
-        
-    except Exception as e:
-        current_app.logger.error(f"Get profile error: {str(e)}")
-        return error_response(
-            message="Terjadi kesalahan saat mengambil profil",
-            error_code="server_error",
-            status_code=500
-        )
+    except Exception:
+        logger.exception("Get profile error")
+        return server_error("Terjadi kesalahan saat mengambil profil")
 
 
 @profile_bp.route('/profile/edit', methods=['PUT'])
 @token_required
 def update_profile():
-    """
-    Update current user's profile
+    user_id, err = _get_authenticated_user_id()
+    if err:
+        return err
     
-    Headers:
-        Authorization: Bearer <token>
+    data = request.get_json()
+    if not data:
+        return missing_data_error()
     
-    Request Body:
-        {
-            "full_name": "string" (optional),
-            "profile_picture": "string" (optional),
-            "language_preference": "string" (optional)
-        }
+    is_valid, errors = validate_profile_update(data)
+    if not is_valid:
+        return validation_error(errors)
     
-    Returns:
-        200: Profile updated successfully
-        400: Invalid data
-        401: Unauthorized
-        404: User not found
-    """
+    # Filter to valid fields only
+    update_data = {
+        k: v for k, v in data.items() 
+        if k in User.UPDATABLE_FIELDS
+    }
+    
+    if not update_data:
+        return error_response(
+            message="Tidak ada data yang valid untuk diupdate",
+            error_code="no_valid_data",
+            status_code=400
+        )
+    
+    db = _get_db()
+    if db is None:
+        return database_error()
+    
     try:
-        user_id = get_current_user_id()
+        user_model = User(db)
         
-        if not user_id:
-            return error_response(
-                message="User tidak terautentikasi",
-                error_code="unauthorized",
-                status_code=401
-            )
+        if not user_model.find_by_id(user_id):
+            return not_found_error("User")
         
-        data = request.get_json()
-        
-        if not data:
-            return error_response(
-                message="Data tidak ditemukan",
-                error_code="missing_data",
-                status_code=400
-            )
-        
-        # Validate update data
-        is_valid, errors = validate_profile_update(data)
-        if not is_valid:
-            return validation_error(errors)
-        
-        # Check if any valid field is provided
-        valid_fields = {'full_name', 'profile_picture', 'language_preference', 'default_address'}
-        update_data = {k: v for k, v in data.items() if k in valid_fields}
-        
-        if not update_data:
-            return error_response(
-                message="Tidak ada data yang valid untuk diupdate",
-                error_code="no_valid_data",
-                status_code=400
-            )
-        
-        # Get MongoDB from app context
-        mongo = current_app.extensions.get('pymongo')
-        if not mongo:
-            return error_response(
-                message="Database tidak tersedia",
-                error_code="database_error",
-                status_code=500
-            )
-        
-        user_model = User(mongo.db)
-        
-        # Check if user exists
-        existing_user = user_model.find_by_id(user_id)
-        if not existing_user:
-            return error_response(
-                message="User tidak ditemukan",
-                error_code="user_not_found",
-                status_code=404
-            )
-        
-        # Update profile
         updated_user = user_model.update_profile(user_id, update_data)
         
         if not updated_user:
@@ -159,119 +113,51 @@ def update_profile():
             data={'user': updated_user},
             message="Profil berhasil diupdate"
         )
-        
-    except Exception as e:
-        current_app.logger.error(f"Update profile error: {str(e)}")
-        return error_response(
-            message="Terjadi kesalahan saat mengupdate profil",
-            error_code="server_error",
-            status_code=500
-        )
+    except Exception:
+        logger.exception("Update profile error")
+        return server_error("Terjadi kesalahan saat mengupdate profil")
 
+
+# =============================================================================
+# Password Management
+# =============================================================================
 
 @profile_bp.route('/profile/change-password', methods=['POST'])
 @token_required
 def change_password():
-    """
-    Change current user's password
+    user_id, err = _get_authenticated_user_id()
+    if err:
+        return err
     
-    Headers:
-        Authorization: Bearer <token>
+    data = request.get_json()
+    if not data:
+        return missing_data_error()
     
-    Request Body:
-        {
-            "old_password": "string" (required),
-            "new_password": "string" (required),
-            "confirm_password": "string" (required)
-        }
+    # Extract and validate fields
+    old_password = data.get('old_password', '').strip()
+    new_password = data.get('new_password', '').strip()
+    confirm_password = data.get('confirm_password', '').strip()
     
-    Returns:
-        200: Password changed successfully
-        400: Invalid data / Password mismatch
-        401: Unauthorized / Wrong old password
-        404: User not found
-    """
+    # Validation checks
+    validation_checks = [
+        (not old_password, "Password lama harus diisi", "missing_old_password"),
+        (not new_password, "Password baru harus diisi", "missing_new_password"),
+        (not confirm_password, "Konfirmasi password harus diisi", "missing_confirm_password"),
+        (new_password != confirm_password, "Password baru dan konfirmasi password tidak sama", "password_mismatch"),
+        (len(new_password) < 6, "Password baru minimal 6 karakter", "password_too_short"),
+        (old_password == new_password, "Password baru tidak boleh sama dengan password lama", "same_password"),
+    ]
+    
+    for condition, message, code in validation_checks:
+        if condition:
+            return error_response(message=message, error_code=code, status_code=400)
+    
+    db = _get_db()
+    if db is None:
+        return database_error()
+    
     try:
-        user_id = get_current_user_id()
-        
-        if not user_id:
-            return error_response(
-                message="User tidak terautentikasi",
-                error_code="unauthorized",
-                status_code=401
-            )
-        
-        data = request.get_json()
-        
-        if not data:
-            return error_response(
-                message="Data tidak ditemukan",
-                error_code="missing_data",
-                status_code=400
-            )
-        
-        # Validate required fields
-        old_password = data.get('old_password', '').strip()
-        new_password = data.get('new_password', '').strip()
-        confirm_password = data.get('confirm_password', '').strip()
-        
-        if not old_password:
-            return error_response(
-                message="Password lama harus diisi",
-                error_code="missing_old_password",
-                status_code=400
-            )
-        
-        if not new_password:
-            return error_response(
-                message="Password baru harus diisi",
-                error_code="missing_new_password",
-                status_code=400
-            )
-        
-        if not confirm_password:
-            return error_response(
-                message="Konfirmasi password harus diisi",
-                error_code="missing_confirm_password",
-                status_code=400
-            )
-        
-        # Validate password match
-        if new_password != confirm_password:
-            return error_response(
-                message="Password baru dan konfirmasi password tidak sama",
-                error_code="password_mismatch",
-                status_code=400
-            )
-        
-        # Validate password length
-        if len(new_password) < 6:
-            return error_response(
-                message="Password baru minimal 6 karakter",
-                error_code="password_too_short",
-                status_code=400
-            )
-        
-        # Check if new password is same as old password
-        if old_password == new_password:
-            return error_response(
-                message="Password baru tidak boleh sama dengan password lama",
-                error_code="same_password",
-                status_code=400
-            )
-        
-        # Get MongoDB from app context
-        mongo = current_app.extensions.get('pymongo')
-        if not mongo:
-            return error_response(
-                message="Database tidak tersedia",
-                error_code="database_error",
-                status_code=500
-            )
-        
-        user_model = User(mongo.db)
-        
-        # Change password
+        user_model = User(db)
         result = user_model.change_password(user_id, old_password, new_password)
         
         if not result['success']:
@@ -287,15 +173,7 @@ def change_password():
                 status_code=500
             )
         
-        return success_response(
-            data=None,
-            message="Password berhasil diubah"
-        )
-        
-    except Exception as e:
-        current_app.logger.error(f"Change password error: {str(e)}")
-        return error_response(
-            message="Terjadi kesalahan saat mengubah password",
-            error_code="server_error",
-            status_code=500
-        )
+        return success_response(data=None, message="Password berhasil diubah")
+    except Exception:
+        logger.exception("Change password error")
+        return server_error("Terjadi kesalahan saat mengubah password")

@@ -6,18 +6,16 @@ load_dotenv()
 
 
 class Config:
-    """Base configuration class"""
-    
     # Flask Configuration
-    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key')
-    DEBUG = os.getenv('FLASK_DEBUG', '0') == '1'
+    SECRET_KEY = os.getenv('SECRET_KEY')
+    DEBUG = os.getenv('FLASK_DEBUG')
     
     # MongoDB Configuration
     MONGO_URI = os.getenv('MONGO_URI')
     
     # JWT Configuration
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
-    JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS', '240'))
+    JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS'))
 
 
 class DevelopmentConfig(Config):
@@ -45,6 +43,5 @@ config_by_name = {
 
 
 def get_config():
-    """Get configuration based on FLASK_ENV environment variable"""
     env = os.getenv('FLASK_ENV', 'development')
     return config_by_name.get(env, DevelopmentConfig)

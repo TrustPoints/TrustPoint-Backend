@@ -1,47 +1,58 @@
 # TrustPoints Backend
 
-Backend API untuk aplikasi TrustPoints - Platform P2P Delivery dengan sistem trust score.
+Backend API untuk aplikasi TrustPoints - Platform P2P Delivery dengan sistem Trust Points.
 
 ## 🚀 Tech Stack
 
 - **Python 3.12** - Runtime
-- **Flask** - Web Framework
-- **MongoDB** - Database
+- **Flask 3.0** - Web Framework
+- **Flask-SocketIO** - Real-time WebSocket
+- **MongoDB 7.0** - Database
 - **JWT (PyJWT)** - Authentication
 - **bcrypt** - Password Hashing
 - **Docker** - Containerization
-- **Gunicorn** - Production Server
+- **Gunicorn + Eventlet** - Production Server
 
 ## 📁 Struktur Project
 
 ```
-Backend/
+backend/
 ├── app/
-│   ├── __init__.py
+│   ├── __init__.py            # Flask app factory
 │   ├── config.py              # Konfigurasi aplikasi
+│   ├── socket_events.py       # WebSocket event handlers
 │   ├── models/
 │   │   ├── __init__.py
-│   │   └── user.py            # User model & database operations
+│   │   ├── base.py            # Abstract base model class
+│   │   ├── user.py            # User model (auth, points, profile)
+│   │   ├── order.py           # Order model (P2P delivery)
+│   │   ├── activity.py        # Activity log model
+│   │   └── chat.py            # Chat/messaging model
 │   ├── routes/
 │   │   ├── __init__.py
 │   │   ├── auth.py            # Auth routes (register, login)
-│   │   └── profile.py         # Profile routes (get, update)
+│   │   ├── profile.py         # Profile routes (get, update, password)
+│   │   ├── orders.py          # Order routes (create, claim, deliver)
+│   │   ├── wallet.py          # Wallet routes (balance, earn, redeem)
+│   │   ├── activity.py        # Activity history routes
+│   │   └── chat.py            # Chat routes (messages)
 │   └── utils/
 │       ├── __init__.py
-│       ├── auth.py            # JWT utilities & @token_required decorator
+│       ├── auth.py            # JWT utilities & @token_required
 │       ├── responses.py       # Standardized API responses
-│       └── validators.py      # Input validation
+│       ├── validators.py      # Input validation
+│       └── helpers.py         # Route helper functions (DRY)
 ├── app.py                     # Application entry point
 ├── requirements.txt           # Python dependencies
 ├── Dockerfile                 # Docker image configuration
 ├── docker-compose.yml         # Multi-container orchestration
-├── .env                       # Environment variables (jangan commit!)
 ├── .env.example               # Template environment variables
-├── .gitignore                 # Git ignore rules
 └── README.md                  # Dokumentasi ini
 ```
 
-## 🗄️ Database Schema (Users)
+## 🗄️ Database Schema
+
+### Users Collection
 
 ```json
 {
@@ -50,10 +61,74 @@ Backend/
   "email": "string (unique, lowercase)",
   "password": "string (bcrypt hashed)",
   "profile_picture": "string (URL) | null",
+  "points": "number (default: 100)",
   "trust_score": "number (default: 0)",
+  "default_address": "string | null",
   "language_preference": "string (default: 'id')",
   "created_at": "datetime",
   "updated_at": "datetime"
+}
+```
+
+### Orders Collection
+
+```json
+{
+  "_id": "ObjectId",
+  "order_id": "string (TP-YYYYMMDDHHMMSS-XXXXXXXX)",
+  "sender_id": "string",
+  "hunter_id": "string | null",
+  "status": "PENDING | CLAIMED | IN_TRANSIT | DELIVERED | CANCELLED",
+  "item": {
+    "name": "string",
+    "category": "FOOD | DOCUMENT | ELECTRONICS | FASHION | GROCERY | MEDICINE | OTHER",
+    "weight": "number (kg)",
+    "photo_url": "string | null",
+    "description": "string",
+    "is_fragile": "boolean"
+  },
+  "location": {
+    "pickup": { "address": "string", "coords": "GeoJSON Point" },
+    "destination": { "address": "string", "coords": "GeoJSON Point" }
+  },
+  "distance_km": "number",
+  "points_cost": "number (sender pays)",
+  "trust_points_reward": "number (hunter earns)",
+  "notes": "string | null",
+  "claimed_at": "datetime | null",
+  "picked_up_at": "datetime | null",
+  "delivered_at": "datetime | null",
+  "created_at": "datetime",
+  "updated_at": "datetime"
+}
+```
+
+### Activities Collection
+
+```json
+{
+  "_id": "ObjectId",
+  "user_id": "string",
+  "activity_type": "ORDER_CREATED | ORDER_CLAIMED | ORDER_DELIVERED | POINTS_EARNED | POINTS_SPENT | POINTS_TRANSFERRED",
+  "title": "string",
+  "description": "string",
+  "metadata": { ... },
+  "created_at": "datetime"
+}
+```
+
+### Chats Collection
+
+```json
+{
+  "_id": "ObjectId",
+  "order_id": "string",
+  "sender_id": "string",
+  "sender_name": "string",
+  "message": "string",
+  "message_type": "text | system | location",
+  "is_read": "boolean",
+  "created_at": "datetime"
 }
 ```
 
@@ -61,242 +136,120 @@ Backend/
 
 ### Health Check
 
-```
-GET /health
-```
+| Method | Endpoint  | Description           |
+| ------ | --------- | --------------------- |
+| GET    | `/health` | Service health status |
 
-Response:
+### Authentication
 
-```json
-{
-  "status": "healthy",
-  "service": "TrustPoints API",
-  "database": "connected"
-}
-```
+| Method | Endpoint        | Description       |
+| ------ | --------------- | ----------------- |
+| POST   | `/api/register` | Register new user |
+| POST   | `/api/login`    | Login user        |
 
-### Register
+### Profile (🔐 Protected)
 
-```
-POST /api/register
-Content-Type: application/json
+| Method | Endpoint                       | Description              |
+| ------ | ------------------------------ | ------------------------ |
+| GET    | `/api/profile`                 | Get current user profile |
+| PUT    | `/api/profile/edit`            | Update profile           |
+| POST   | `/api/profile/change-password` | Change password          |
 
-{
-  "full_name": "John Doe",
-  "email": "john@example.com",
-  "password": "Password123"
-}
-```
+### Wallet (🔐 Protected)
 
-Response (201):
+| Method | Endpoint               | Description             |
+| ------ | ---------------------- | ----------------------- |
+| GET    | `/api/wallet/balance`  | Get points balance      |
+| POST   | `/api/wallet/earn`     | Add points (admin)      |
+| POST   | `/api/wallet/redeem`   | Spend points            |
+| POST   | `/api/wallet/transfer` | Transfer points to user |
 
-```json
-{
-  "success": true,
-  "message": "Registrasi berhasil",
-  "data": {
-    "user": {
-      "user_id": "...",
-      "full_name": "John Doe",
-      "email": "john@example.com",
-      "profile_picture": null,
-      "trust_score": 0,
-      "language_preference": "id",
-      "created_at": "...",
-      "updated_at": "..."
-    },
-    "token": "eyJ..."
-  }
-}
-```
+### Orders (🔐 Protected)
 
-### Login
+| Method | Endpoint                               | Description                   |
+| ------ | -------------------------------------- | ----------------------------- |
+| POST   | `/api/orders`                          | Create new order (Sender)     |
+| POST   | `/api/orders/estimate-cost`            | Estimate delivery cost        |
+| GET    | `/api/orders/available`                | Get available orders (Hunter) |
+| GET    | `/api/orders/nearby?lat=&lng=&radius=` | Get nearby orders             |
+| GET    | `/api/orders/<order_id>`               | Get order detail              |
+| PUT    | `/api/orders/claim/<order_id>`         | Claim order (Hunter)          |
+| PUT    | `/api/orders/pickup/<order_id>`        | Start delivery (Hunter)       |
+| PUT    | `/api/orders/deliver/<order_id>`       | Complete delivery (Hunter)    |
+| PUT    | `/api/orders/cancel/<order_id>`        | Cancel order (Sender)         |
+| GET    | `/api/orders/my-orders`                | Get my orders (Sender)        |
+| GET    | `/api/orders/my-deliveries`            | Get my deliveries (Hunter)    |
+| GET    | `/api/orders/categories`               | Get item categories           |
 
-```
-POST /api/login
-Content-Type: application/json
+### Activity (🔐 Protected)
 
-{
-  "email": "john@example.com",
-  "password": "Password123"
-}
-```
+| Method | Endpoint                       | Description                    |
+| ------ | ------------------------------ | ------------------------------ |
+| GET    | `/api/activity/`               | Get all activities (paginated) |
+| GET    | `/api/activity/recent?limit=5` | Get recent activities          |
 
-Response (200):
+### Chat (🔐 Protected)
 
-```json
-{
-  "success": true,
-  "message": "Login berhasil",
-  "data": {
-    "user": { ... },
-    "token": "eyJ..."
-  }
-}
-```
+| Method | Endpoint                        | Description       |
+| ------ | ------------------------------- | ----------------- |
+| GET    | `/api/chat/<order_id>/messages` | Get chat messages |
+| POST   | `/api/chat/<order_id>/send`     | Send message      |
+| PUT    | `/api/chat/<order_id>/read`     | Mark as read      |
 
-### Get Profile (Protected)
+## 💰 Points System
 
-```
-GET /api/profile
-Authorization: Bearer <token>
-```
+### Pricing (Sender pays)
 
-Response (200):
+- **Base**: 10 pts per km
+- **Weight**: +5 pts per kg (over 1kg)
+- **Fragile**: +20% surcharge
+- **Minimum**: 10 pts
 
-```json
-{
-  "success": true,
-  "message": "Profil berhasil diambil",
-  "data": {
-    "user": { ... }
-  }
-}
-```
+### Rewards (Hunter earns)
 
-### Update Profile (Protected)
+- **Base**: 10 pts per km
+- **Fragile bonus**: +50%
+- **Minimum**: 5 pts
 
-```
-PUT /api/profile/edit
-Authorization: Bearer <token>
-Content-Type: application/json
+### Conversion Rate
 
-{
-  "full_name": "John Updated",
-  "profile_picture": "https://example.com/photo.jpg",
-  "language_preference": "en"
-}
-```
+- **1 pts = Rp 100**
 
-Response (200):
-
-```json
-{
-  "success": true,
-  "message": "Profil berhasil diupdate",
-  "data": {
-    "user": { ... }
-  }
-}
-```
-
-## 🐳 Cara Menjalankan dengan Docker
-
-### 1. Clone & Setup Environment
+## 🐳 Docker Commands
 
 ```bash
-# Masuk ke direktori project
-cd Backend
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env dan ganti nilai-nilai berikut:
-# - JWT_SECRET_KEY (gunakan string random yang kuat)
-# - SECRET_KEY (gunakan string random yang kuat)
-```
-
-### 2. Build & Run dengan Docker Compose
-
-```bash
-# Build dan jalankan semua services
-docker-compose up --build
-
-# Atau jalankan di background (detached mode)
+# Build & run
 docker-compose up --build -d
-```
 
-### 3. Verifikasi
+# View logs
+docker-compose logs -f trustpoints-api
 
-```bash
-# Cek status containers
-docker-compose ps
+# Restart API
+docker-compose restart trustpoints-api
 
-# Cek logs
-docker-compose logs -f api
-
-# Test health endpoint
-curl http://localhost:5000/health
-```
-
-### 4. Akses Aplikasi
-
-- **API**: http://localhost:5000
-- **MongoDB**: localhost:27017
-- **Mongo Express** (opsional): http://localhost:8081
-  - Untuk mengaktifkan: `docker-compose --profile debug up`
-
-### 5. Stop Services
-
-```bash
-# Stop semua containers
+# Stop all
 docker-compose down
 
-# Stop dan hapus volumes (reset database)
+# Reset database
 docker-compose down -v
 ```
 
-## 🔧 Development Mode (Tanpa Docker)
+## 🔐 Security Features
 
-### 1. Setup Virtual Environment
+1. **Password Hashing**: bcrypt with 12 rounds
+2. **JWT Tokens**: 24h expiry (configurable)
+3. **Protected Routes**: `@token_required` decorator
+4. **Input Validation**: Email, password, coordinates
+5. **Environment Variables**: Secrets in .env
 
-```bash
-# Buat virtual environment
-python3.12 -m venv venv
+## 📝 Code Standards
 
-# Aktivasi (macOS/Linux)
-source venv/bin/activate
+Project ini mengikuti prinsip:
 
-# Aktivasi (Windows)
-venv\Scripts\activate
-```
-
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Setup MongoDB
-
-Pastikan MongoDB sudah running di localhost:27017
-
-### 4. Setup Environment
-
-```bash
-cp .env.example .env
-# Edit .env dan sesuaikan MONGO_URI jika perlu
-```
-
-### 5. Run Application
-
-```bash
-# Development mode
-python app.py
-
-# Atau dengan Flask CLI
-flask run --host=0.0.0.0 --port=5000
-```
-
-## 🔐 Keamanan
-
-1. **Password Hashing**: Menggunakan bcrypt dengan 12 rounds
-2. **JWT Tokens**: Token expires setelah 24 jam (configurable)
-3. **Protected Routes**: Decorator `@token_required` untuk route yang membutuhkan auth
-4. **Input Validation**: Validasi email, password strength, dan input lainnya
-5. **Environment Variables**: Secrets disimpan di .env (tidak di-commit)
-
-## 📝 Password Requirements
-
-- Minimal 8 karakter
-- Minimal 1 huruf besar
-- Minimal 1 huruf kecil
-- Minimal 1 angka
-
-## 🌐 Supported Languages
-
-- `id` - Indonesian (default)
-- `en` - English
+- **DRY** - Helper functions untuk response & database
+- **Type Safety** - Type hints dengan `typing` module
+- **Enums** - `OrderStatus`, `ItemCategory`, `ActivityType`
+- **Maintainability** - Section separators & docstrings
 
 ## 📄 License
 

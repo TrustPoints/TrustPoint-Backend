@@ -1,26 +1,56 @@
+import logging
+from typing import Optional
 from flask import Blueprint, request, current_app
+
 from app.models.user import User
 from app.utils.auth import token_required, get_current_user_id
-from app.utils.responses import success_response, error_response
+from app.utils.responses import (
+    success_response, error_response,
+    database_error, missing_data_error, not_found_error
+)
+
+logger = logging.getLogger(__name__)
 
 wallet_bp = Blueprint('wallet', __name__)
 
 
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def _get_db():
+    mongo = current_app.extensions.get('pymongo')
+    return mongo.db if mongo else None
+
+
+def _validate_points(points) -> Optional[tuple]:
+    if not isinstance(points, int) or points <= 0:
+        return ("Poin harus berupa bilangan positif", "invalid_points")
+    return None
+
+
+def _format_balance_response(balance: int) -> dict:
+    return {
+        'points': balance,
+        'rupiah_equivalent': balance * User.POINTS_TO_RUPIAH,
+        'conversion_rate': f'1 pts = Rp{User.POINTS_TO_RUPIAH}'
+    }
+
+
+# =============================================================================
+# Balance Endpoints
+# =============================================================================
+
 @wallet_bp.route('/balance', methods=['GET'])
 @token_required
 def get_balance():
-    """Get current user's points balance"""
     user_id = get_current_user_id()
     
-    mongo = current_app.extensions.get('pymongo')
-    if not mongo:
-        return error_response(
-            message="Database tidak tersedia",
-            error_code="database_error",
-            status_code=500
-        )
+    db = _get_db()
+    if db is None:
+        return database_error()
     
-    user_model = User(mongo.db)
+    user_model = User(db)
     result = user_model.get_points(user_id)
     
     if result['success']:
@@ -28,7 +58,7 @@ def get_balance():
             data={
                 'points': result['points'],
                 'rupiah_equivalent': result['rupiah_equivalent'],
-                'conversion_rate': '1 pts = Rp100'
+                'conversion_rate': f'1 pts = Rp{User.POINTS_TO_RUPIAH}'
             },
             message="Berhasil mendapatkan saldo"
         )
@@ -40,10 +70,13 @@ def get_balance():
     )
 
 
+# =============================================================================
+# Points Operations
+# =============================================================================
+
 @wallet_bp.route('/earn', methods=['POST'])
 @token_required
 def earn_points():
-    """Add points to user's wallet (for completing deliveries, etc.)"""
     user_id = get_current_user_id()
     data = request.get_json()
     
@@ -57,22 +90,19 @@ def earn_points():
     points = data.get('points', 0)
     reason = data.get('reason', 'Points earned')
     
-    if not isinstance(points, int) or points <= 0:
+    validation_err = _validate_points(points)
+    if validation_err:
         return error_response(
-            message="Poin harus berupa bilangan positif",
-            error_code="invalid_points",
+            message=validation_err[0],
+            error_code=validation_err[1],
             status_code=400
         )
     
-    mongo = current_app.extensions.get('pymongo')
-    if not mongo:
-        return error_response(
-            message="Database tidak tersedia",
-            error_code="database_error",
-            status_code=500
-        )
+    db = _get_db()
+    if db is None:
+        return database_error()
     
-    user_model = User(mongo.db)
+    user_model = User(db)
     result = user_model.add_points(user_id, points, reason)
     
     if result['success']:
@@ -80,7 +110,7 @@ def earn_points():
             data={
                 'added': result['added'],
                 'new_balance': result['new_balance'],
-                'rupiah_equivalent': result['new_balance'] * 100
+                'rupiah_equivalent': result['new_balance'] * User.POINTS_TO_RUPIAH
             },
             message=f'Berhasil mendapatkan {points} pts'
         )
@@ -95,7 +125,6 @@ def earn_points():
 @wallet_bp.route('/redeem', methods=['POST'])
 @token_required
 def redeem_points():
-    """Redeem/spend points from user's wallet"""
     user_id = get_current_user_id()
     data = request.get_json()
     
@@ -109,22 +138,19 @@ def redeem_points():
     points = data.get('points', 0)
     reason = data.get('reason', 'Points redeemed')
     
-    if not isinstance(points, int) or points <= 0:
+    validation_err = _validate_points(points)
+    if validation_err:
         return error_response(
-            message="Poin harus berupa bilangan positif",
-            error_code="invalid_points",
+            message=validation_err[0],
+            error_code=validation_err[1],
             status_code=400
         )
     
-    mongo = current_app.extensions.get('pymongo')
-    if not mongo:
-        return error_response(
-            message="Database tidak tersedia",
-            error_code="database_error",
-            status_code=500
-        )
+    db = _get_db()
+    if db is None:
+        return database_error()
     
-    user_model = User(mongo.db)
+    user_model = User(db)
     result = user_model.deduct_points(user_id, points, reason)
     
     if result['success']:
@@ -132,7 +158,7 @@ def redeem_points():
             data={
                 'redeemed': result['deducted'],
                 'new_balance': result['new_balance'],
-                'rupiah_equivalent': result['new_balance'] * 100
+                'rupiah_equivalent': result['new_balance'] * User.POINTS_TO_RUPIAH
             },
             message=f'Berhasil menukarkan {points} pts'
         )
@@ -144,19 +170,18 @@ def redeem_points():
     )
 
 
+# =============================================================================
+# Transfer Operations
+# =============================================================================
+
 @wallet_bp.route('/transfer', methods=['POST'])
 @token_required
 def transfer_points():
-    """Transfer points to another user"""
     user_id = get_current_user_id()
     data = request.get_json()
     
     if not data:
-        return error_response(
-            message="Data diperlukan",
-            error_code="missing_data",
-            status_code=400
-        )
+        return missing_data_error()
     
     recipient_email = data.get('recipient_email')
     points = data.get('points', 0)
@@ -168,35 +193,28 @@ def transfer_points():
             status_code=400
         )
     
-    if not isinstance(points, int) or points <= 0:
+    validation_err = _validate_points(points)
+    if validation_err:
         return error_response(
-            message="Poin harus berupa bilangan positif",
-            error_code="invalid_points",
+            message=validation_err[0],
+            error_code=validation_err[1],
             status_code=400
         )
     
-    mongo = current_app.extensions.get('pymongo')
-    if not mongo:
-        return error_response(
-            message="Database tidak tersedia",
-            error_code="database_error",
-            status_code=500
-        )
+    db = _get_db()
+    if db is None:
+        return database_error()
     
-    user_model = User(mongo.db)
+    user_model = User(db)
     
     # Find recipient
     recipient = user_model.find_by_email(recipient_email)
     if not recipient:
-        return error_response(
-            message="Penerima tidak ditemukan",
-            error_code="recipient_not_found",
-            status_code=404
-        )
+        return not_found_error("Penerima")
     
     recipient_id = str(recipient['_id'])
     
-    # Cannot transfer to self
+    # Prevent self-transfer
     if recipient_id == user_id:
         return error_response(
             message="Tidak dapat transfer ke diri sendiri",
@@ -205,7 +223,9 @@ def transfer_points():
         )
     
     # Deduct from sender
-    deduct_result = user_model.deduct_points(user_id, points, f'Transfer to {recipient_email}')
+    deduct_result = user_model.deduct_points(
+        user_id, points, f'Transfer to {recipient_email}'
+    )
     if not deduct_result['success']:
         return error_response(
             message=deduct_result.get('error', 'Gagal transfer poin'),
@@ -214,7 +234,9 @@ def transfer_points():
         )
     
     # Add to recipient
-    add_result = user_model.add_points(recipient_id, points, f'Transfer from user')
+    add_result = user_model.add_points(
+        recipient_id, points, 'Transfer from user'
+    )
     if not add_result['success']:
         # Rollback - refund sender
         user_model.add_points(user_id, points, 'Refund - transfer failed')
@@ -228,7 +250,7 @@ def transfer_points():
         data={
             'transferred': points,
             'new_balance': deduct_result['new_balance'],
-            'rupiah_equivalent': deduct_result['new_balance'] * 100
+            'rupiah_equivalent': deduct_result['new_balance'] * User.POINTS_TO_RUPIAH
         },
         message=f'Berhasil transfer {points} pts ke {recipient_email}'
     )
