@@ -47,11 +47,13 @@ def create_app(config_object=None):
     from app.routes.profile import profile_bp
     from app.routes.orders import orders_bp
     from app.routes.chat import chat_bp
+    from app.routes.wallet import wallet_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
     app.register_blueprint(orders_bp, url_prefix='/api')
     app.register_blueprint(chat_bp, url_prefix='/api')
+    app.register_blueprint(wallet_bp, url_prefix='/api/wallet')
     
     # Register Socket.IO events
     from app.socket_events import register_socket_events
@@ -106,6 +108,13 @@ def create_app(config_object=None):
                     'my_orders': 'GET /api/orders/my-orders',
                     'my_deliveries': 'GET /api/orders/my-deliveries',
                     'categories': 'GET /api/orders/categories'
+                },
+                'wallet': {
+                    'note': '1 pts = Rp100',
+                    'balance': 'GET /api/wallet/balance',
+                    'earn': 'POST /api/wallet/earn',
+                    'redeem': 'POST /api/wallet/redeem',
+                    'transfer': 'POST /api/wallet/transfer'
                 }
             }
         })

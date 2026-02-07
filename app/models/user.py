@@ -34,6 +34,7 @@ class User:
             'password': self.hash_password(password),
             'profile_picture': None,
             'trust_score': 0,
+            'points': 0,  # 1 pts = Rp100
             'language_preference': 'id',
             'default_address': None,  # {address: str, latitude: float, longitude: float}
             'created_at': now,
@@ -110,6 +111,72 @@ class User:
             if result.modified_count > 0:
                 return {'success': True}
             return {'success': False, 'error': 'Failed to update password'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def add_points(self, user_id: str, points: int, reason: str = None) -> dict:
+        """Add points to user's wallet (1 pts = Rp100)"""
+        try:
+            result = self.collection.find_one_and_update(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$inc': {'points': points},
+                    '$set': {'updated_at': datetime.utcnow()}
+                },
+                return_document=True
+            )
+            if result:
+                return {
+                    'success': True,
+                    'new_balance': result.get('points', 0),
+                    'added': points
+                }
+            return {'success': False, 'error': 'User not found'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def deduct_points(self, user_id: str, points: int, reason: str = None) -> dict:
+        """Deduct points from user's wallet"""
+        try:
+            # First check if user has enough points
+            user = self.collection.find_one({'_id': ObjectId(user_id)})
+            if not user:
+                return {'success': False, 'error': 'User not found'}
+            
+            current_points = user.get('points', 0)
+            if current_points < points:
+                return {'success': False, 'error': 'Insufficient points'}
+            
+            result = self.collection.find_one_and_update(
+                {'_id': ObjectId(user_id)},
+                {
+                    '$inc': {'points': -points},
+                    '$set': {'updated_at': datetime.utcnow()}
+                },
+                return_document=True
+            )
+            if result:
+                return {
+                    'success': True,
+                    'new_balance': result.get('points', 0),
+                    'deducted': points
+                }
+            return {'success': False, 'error': 'Failed to deduct points'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def get_points(self, user_id: str) -> dict:
+        """Get user's current points balance"""
+        try:
+            user = self.collection.find_one({'_id': ObjectId(user_id)})
+            if user:
+                points = user.get('points', 0)
+                return {
+                    'success': True,
+                    'points': points,
+                    'rupiah_equivalent': points * 100  # 1 pts = Rp100
+                }
+            return {'success': False, 'error': 'User not found'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
