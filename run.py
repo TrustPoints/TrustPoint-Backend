@@ -48,12 +48,14 @@ def create_app(config_object=None):
     from app.routes.orders import orders_bp
     from app.routes.chat import chat_bp
     from app.routes.wallet import wallet_bp
+    from app.routes.activity import activity_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
     app.register_blueprint(orders_bp, url_prefix='/api')
     app.register_blueprint(chat_bp, url_prefix='/api')
     app.register_blueprint(wallet_bp, url_prefix='/api/wallet')
+    app.register_blueprint(activity_bp, url_prefix='/api/activity')
     
     # Register Socket.IO events
     from app.socket_events import register_socket_events

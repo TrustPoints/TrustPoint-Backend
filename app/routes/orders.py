@@ -5,6 +5,7 @@ Handles order/delivery operations for Sender and Hunter
 from flask import Blueprint, request, current_app
 from app.models.order import Order, OrderStatus, ItemCategory
 from app.models.user import User
+from app.models.activity import Activity
 from app.utils.auth import token_required, get_current_user_id
 from app.utils.responses import success_response, error_response, validation_error
 from app.utils.validators import validate_order_creation, validate_nearby_query
@@ -138,6 +139,14 @@ def create_order():
             location_data=data['location'],
             distance_km=data['distance_km'],
             notes=data.get('notes')
+        )
+        
+        # Log activity
+        activity_model = Activity(mongo.db)
+        activity_model.log_order_created(
+            user_id=sender_id,
+            order_id=order.get('order_id', ''),
+            points_cost=points_cost
         )
         
         return success_response(
@@ -550,6 +559,10 @@ def claim_order(order_id):
                 status_code=400
             )
         
+        # Log activity for hunter
+        activity_model = Activity(mongo.db)
+        activity_model.log_order_claimed(user_id=hunter_id, order_id=order_id)
+        
         return success_response(
             data={'order': order},
             message="Pesanan berhasil diambil! Silakan menuju lokasi pickup."
@@ -712,6 +725,14 @@ def deliver_order(order_id):
         
         if not points_result['success']:
             current_app.logger.warning(f"Failed to add points for hunter {hunter_id}: {points_result.get('error')}")
+        
+        # Log activity for hunter (delivery completed, points earned)
+        activity_model = Activity(mongo.db)
+        activity_model.log_order_delivered(
+            user_id=hunter_id,
+            order_id=order_id,
+            points_earned=trust_points_earned
+        )
         
         return success_response(
             data={
