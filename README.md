@@ -35,20 +35,38 @@ backend/
 │   │   ├── orders.py          # Order routes (create, claim, deliver)
 │   │   ├── wallet.py          # Wallet routes (balance, earn, redeem)
 │   │   ├── activity.py        # Activity history routes
-│   │   └── chat.py            # Chat routes (messages)
+│   │   ├── chat.py            # Chat routes (messages)
+│   │   └── admin.py           # Admin API routes
 │   └── utils/
 │       ├── __init__.py
 │       ├── auth.py            # JWT utilities & @token_required
 │       ├── responses.py       # Standardized API responses
 │       ├── validators.py      # Input validation
 │       └── helpers.py         # Route helper functions (DRY)
-├── app.py                     # Application entry point
+├── run.py                     # Application entry point
 ├── requirements.txt           # Python dependencies
 ├── Dockerfile                 # Docker image configuration
 ├── docker-compose.yml         # Multi-container orchestration
 ├── .env.example               # Template environment variables
 └── README.md                  # Dokumentasi ini
 ```
+
+### Admin API Endpoints
+
+| Method | Endpoint                       | Deskripsi                          |
+| ------ | ------------------------------ | ---------------------------------- |
+| GET    | `/api/admin/stats`             | Dashboard statistics               |
+| GET    | `/api/admin/users`             | List users (paginated, searchable) |
+| GET    | `/api/admin/users/:id`         | Get user detail                    |
+| POST   | `/api/admin/users`             | Create user                        |
+| PUT    | `/api/admin/users/:id`         | Update user                        |
+| DELETE | `/api/admin/users/:id`         | Delete user                        |
+| POST   | `/api/admin/users/:id/balance` | Adjust user balance                |
+| GET    | `/api/admin/orders`            | List orders (with filter)          |
+| GET    | `/api/admin/orders/:id`        | Get order detail                   |
+| PUT    | `/api/admin/orders/:id/status` | Update order status                |
+| GET    | `/api/admin/transactions`      | List transactions                  |
+| GET    | `/api/admin/activities`        | List activities                    |
 
 ## 🗄️ Database Schema
 

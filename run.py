@@ -2,7 +2,8 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, jsonify
+import os
+from flask import Flask, jsonify, send_from_directory
 from flask_pymongo import PyMongo
 from flask_socketio import SocketIO
 from flask_cors import CORS
@@ -16,7 +17,7 @@ socketio = SocketIO()
 
 
 def create_app(config_object=None):
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='admin')
     
     # Load configuration
     if config_object is None:
@@ -24,8 +25,16 @@ def create_app(config_object=None):
     
     app.config.from_object(config_object)
     
-    # Enable CORS
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    # Enable CORS with full support for Authorization header
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": "*",
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
     
     # Initialize extensions
     mongo.init_app(app)
@@ -42,6 +51,9 @@ def create_app(config_object=None):
     # Store mongo in extensions for access in routes
     app.extensions['pymongo'] = mongo
     
+    # Store database in app.config for route access
+    app.config['db'] = mongo.db
+    
     # Register blueprints
     from app.routes.auth import auth_bp
     from app.routes.profile import profile_bp
@@ -49,6 +61,7 @@ def create_app(config_object=None):
     from app.routes.chat import chat_bp
     from app.routes.wallet import wallet_bp
     from app.routes.activity import activity_bp
+    from app.routes.admin import admin_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(profile_bp, url_prefix='/api')
@@ -56,10 +69,20 @@ def create_app(config_object=None):
     app.register_blueprint(chat_bp, url_prefix='/api')
     app.register_blueprint(wallet_bp, url_prefix='/api/wallet')
     app.register_blueprint(activity_bp, url_prefix='/api/activity')
+    app.register_blueprint(admin_bp, url_prefix='/admin')
     
     # Register Socket.IO events
     from app.socket_events import register_socket_events
     register_socket_events(socketio)
+    
+    # Serve admin panel static files
+    admin_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'admin')
+    
+    @app.route('/admin/')
+    @app.route('/admin/<path:filename>')
+    def admin_panel(filename='index.html'):
+        """Serve admin panel static files"""
+        return send_from_directory(admin_folder, filename)
     
     # Health check endpoint
     @app.route('/health', methods=['GET'])
@@ -117,8 +140,23 @@ def create_app(config_object=None):
                     'earn': 'POST /api/wallet/earn',
                     'redeem': 'POST /api/wallet/redeem',
                     'transfer': 'POST /api/wallet/transfer'
+                },
+                'admin': {
+                    'stats': 'GET /api/admin/stats',
+                    'users': 'GET /api/admin/users',
+                    'user_detail': 'GET /api/admin/users/<user_id>',
+                    'create_user': 'POST /api/admin/users',
+                    'update_user': 'PUT /api/admin/users/<user_id>',
+                    'delete_user': 'DELETE /api/admin/users/<user_id>',
+                    'adjust_balance': 'POST /api/admin/users/<user_id>/balance',
+                    'orders': 'GET /api/admin/orders',
+                    'order_detail': 'GET /api/admin/orders/<order_id>',
+                    'update_order_status': 'PUT /api/admin/orders/<order_id>/status',
+                    'transactions': 'GET /api/admin/transactions',
+                    'activities': 'GET /api/admin/activities'
                 }
-            }
+            },
+            'admin_panel': '/admin/'
         })
     
     # Error handlers
