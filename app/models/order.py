@@ -69,11 +69,35 @@ class Order:
     
     @staticmethod
     def calculate_trust_points(distance_km: float, is_fragile: bool = False) -> int:
-        """Calculate trust points reward based on distance and item fragility"""
+        """Calculate trust points reward for hunter based on distance and item fragility"""
         base_points = int(distance_km * 10)  # 10 points per km
         if is_fragile:
             base_points = int(base_points * 1.5)  # 50% bonus for fragile items
         return max(base_points, 5)  # Minimum 5 points
+    
+    @staticmethod
+    def calculate_delivery_cost(distance_km: float, weight_kg: float = 0, is_fragile: bool = False) -> int:
+        """
+        Calculate delivery cost in points for sender
+        
+        Pricing:
+        - Base: 10 points per km
+        - Weight surcharge: +5 points per kg over 1kg
+        - Fragile surcharge: +20%
+        - Minimum cost: 10 points
+        """
+        # Base cost: 10 points per km
+        base_cost = int(distance_km * 10)
+        
+        # Weight surcharge: +5 points per kg over 1kg
+        if weight_kg > 1:
+            base_cost += int((weight_kg - 1) * 5)
+        
+        # Fragile surcharge: +20%
+        if is_fragile:
+            base_cost = int(base_cost * 1.2)
+        
+        return max(base_cost, 10)  # Minimum 10 points
     
     def create_order(self, sender_id: str, item_data: dict, location_data: dict, 
                      distance_km: float, notes: str = None) -> dict:
@@ -92,9 +116,13 @@ class Order:
         """
         now = datetime.utcnow()
         
-        # Calculate trust points reward
+        # Calculate trust points reward for hunter
         is_fragile = item_data.get('is_fragile', False)
+        weight_kg = item_data.get('weight', 0)
         trust_points_reward = self.calculate_trust_points(distance_km, is_fragile)
+        
+        # Calculate delivery cost for sender
+        points_cost = self.calculate_delivery_cost(distance_km, weight_kg, is_fragile)
         
         order_doc = {
             'order_id': self.generate_order_id(),
@@ -104,7 +132,7 @@ class Order:
             'item': {
                 'name': item_data.get('name'),
                 'category': item_data.get('category', ItemCategory.OTHER),
-                'weight': item_data.get('weight', 0),  # in kg
+                'weight': weight_kg,  # in kg
                 'photo_url': item_data.get('photo_url'),
                 'description': item_data.get('description', ''),
                 'is_fragile': is_fragile
@@ -126,7 +154,8 @@ class Order:
                 }
             },
             'distance_km': round(distance_km, 2),
-            'trust_points_reward': trust_points_reward,
+            'points_cost': points_cost,  # Cost for sender
+            'trust_points_reward': trust_points_reward,  # Reward for hunter
             'notes': notes,
             'claimed_at': None,
             'picked_up_at': None,

@@ -17,6 +17,7 @@ orders_bp = Blueprint('orders', __name__)
 def create_order():
     """
     Create a new order (Sender endpoint)
+    Requires payment in points from sender's wallet
     
     Headers:
         Authorization: Bearer <token>
@@ -48,8 +49,8 @@ def create_order():
         }
     
     Returns:
-        201: Order created successfully
-        400: Validation error
+        201: Order created successfully, points deducted
+        400: Validation error or insufficient points
         401: Unauthorized
     """
     try:
@@ -86,6 +87,49 @@ def create_order():
             )
         
         order_model = Order(mongo.db)
+        user_model = User(mongo.db)
+        
+        # Calculate delivery cost
+        distance_km = data['distance_km']
+        weight_kg = data['item'].get('weight', 0)
+        is_fragile = data['item'].get('is_fragile', False)
+        points_cost = order_model.calculate_delivery_cost(distance_km, weight_kg, is_fragile)
+        
+        # Check if sender has enough points
+        user_points = user_model.get_points(sender_id)
+        if not user_points['success']:
+            return error_response(
+                message="Gagal mengecek saldo points",
+                error_code="balance_check_failed",
+                status_code=400
+            )
+        
+        current_balance = user_points['points']
+        if current_balance < points_cost:
+            return error_response(
+                message="Saldo tidak mencukupi. Butuh lebih banyak points.",
+                error_code="insufficient_points",
+                status_code=400,
+                data={
+                    'required_points': points_cost,
+                    'current_balance': current_balance,
+                    'shortage': points_cost - current_balance
+                }
+            )
+        
+        # Deduct points from sender
+        deduct_result = user_model.deduct_points(
+            sender_id, 
+            points_cost, 
+            f"Payment for delivery order"
+        )
+        
+        if not deduct_result['success']:
+            return error_response(
+                message="Gagal memotong saldo points",
+                error_code="payment_failed",
+                status_code=400
+            )
         
         # Create order
         order = order_model.create_order(
@@ -97,8 +141,14 @@ def create_order():
         )
         
         return success_response(
-            data={'order': order},
-            message="Pesanan berhasil dibuat",
+            data={
+                'order': order,
+                'payment': {
+                    'points_deducted': points_cost,
+                    'new_balance': deduct_result['new_balance']
+                }
+            },
+            message=f"Pesanan berhasil dibuat. {points_cost} pts telah dipotong dari saldo Anda.",
             status_code=201
         )
         
@@ -106,6 +156,93 @@ def create_order():
         current_app.logger.error(f"Create order error: {str(e)}")
         return error_response(
             message="Terjadi kesalahan saat membuat pesanan",
+            error_code="server_error",
+            status_code=500
+        )
+
+
+@orders_bp.route('/orders/estimate-cost', methods=['POST'])
+@token_required
+def estimate_delivery_cost():
+    """
+    Estimate delivery cost before creating order
+    
+    Headers:
+        Authorization: Bearer <token>
+    
+    Request Body:
+        {
+            "distance_km": float,
+            "weight_kg": float (optional, default 0),
+            "is_fragile": boolean (optional, default false)
+        }
+    
+    Returns:
+        200: Estimated cost and user's current balance
+    """
+    try:
+        user_id = get_current_user_id()
+        
+        if not user_id:
+            return error_response(
+                message="User tidak terautentikasi",
+                error_code="unauthorized",
+                status_code=401
+            )
+        
+        data = request.get_json()
+        
+        if not data or 'distance_km' not in data:
+            return error_response(
+                message="Distance (distance_km) diperlukan",
+                error_code="missing_distance",
+                status_code=400
+            )
+        
+        distance_km = float(data.get('distance_km', 0))
+        weight_kg = float(data.get('weight_kg', 0))
+        is_fragile = data.get('is_fragile', False)
+        
+        # Get MongoDB from app context
+        mongo = current_app.extensions.get('pymongo')
+        if not mongo:
+            return error_response(
+                message="Database tidak tersedia",
+                error_code="database_error",
+                status_code=500
+            )
+        
+        # Calculate estimated cost
+        points_cost = Order.calculate_delivery_cost(distance_km, weight_kg, is_fragile)
+        hunter_reward = Order.calculate_trust_points(distance_km, is_fragile)
+        
+        # Get user's current balance
+        user_model = User(mongo.db)
+        user_points = user_model.get_points(user_id)
+        current_balance = user_points.get('points', 0) if user_points['success'] else 0
+        
+        can_afford = current_balance >= points_cost
+        
+        return success_response(
+            data={
+                'estimated_cost': points_cost,
+                'hunter_reward': hunter_reward,
+                'current_balance': current_balance,
+                'can_afford': can_afford,
+                'shortage': max(0, points_cost - current_balance),
+                'breakdown': {
+                    'base_cost': int(distance_km * 10),
+                    'weight_surcharge': int((weight_kg - 1) * 5) if weight_kg > 1 else 0,
+                    'fragile_surcharge': '20%' if is_fragile else '0%'
+                }
+            },
+            message="Estimasi biaya pengiriman"
+        )
+        
+    except Exception as e:
+        current_app.logger.error(f"Estimate cost error: {str(e)}")
+        return error_response(
+            message="Terjadi kesalahan saat menghitung estimasi",
             error_code="server_error",
             status_code=500
         )
