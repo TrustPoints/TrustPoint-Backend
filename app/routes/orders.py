@@ -4,6 +4,7 @@ Handles order/delivery operations for Sender and Hunter
 """
 from flask import Blueprint, request, current_app
 from app.models.order import Order, OrderStatus, ItemCategory
+from app.models.user import User
 from app.utils.auth import token_required, get_current_user_id
 from app.utils.responses import success_response, error_response, validation_error
 from app.utils.validators import validate_order_creation, validate_nearby_query
@@ -566,13 +567,20 @@ def deliver_order(order_id):
                 status_code=400
             )
         
-        # TODO: Add trust points to hunter's account
+        # Add trust points to hunter's account
         trust_points_earned = order['trust_points_reward']
+        
+        user_model = User(mongo.db)
+        points_result = user_model.add_points(hunter_id, trust_points_earned, f"Delivery completed: {order_id}")
+        
+        if not points_result['success']:
+            current_app.logger.warning(f"Failed to add points for hunter {hunter_id}: {points_result.get('error')}")
         
         return success_response(
             data={
                 'order': order,
-                'trust_points_earned': trust_points_earned
+                'trust_points_earned': trust_points_earned,
+                'new_points_balance': points_result.get('new_balance', 0) if points_result['success'] else None
             },
             message=f"Pengiriman selesai! Anda mendapatkan {trust_points_earned} Trust Points."
         )
