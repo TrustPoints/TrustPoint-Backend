@@ -177,7 +177,7 @@ def validate_item_data(item: dict) -> Tuple[bool, List[str]]:
         errors.append("URL foto tidak valid atau terlalu panjang")
     
     # Validate description
-    description = item.get('description', '')
+    description = item.get('description') or ''
     if len(description) > 500:
         errors.append("Deskripsi maksimal 500 karakter")
     
