@@ -207,7 +207,7 @@ def estimate_delivery_cost():
         
         # Calculate costs
         points_cost = Order.calculate_delivery_cost(distance_km, weight_kg, is_fragile)
-        hunter_reward = Order.calculate_trust_points(distance_km, is_fragile)
+        hunter_reward = points_cost  # Kurir terima 100% dari biaya pengiriman
         
         # Get user balance
         user_model = User(db)

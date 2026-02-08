@@ -139,7 +139,7 @@ class Order:
             },
             'distance_km': round(distance_km, 2),
             'points_cost': self.calculate_delivery_cost(distance_km, weight_kg, is_fragile),
-            'trust_points_reward': self.calculate_trust_points(distance_km, is_fragile),
+            'trust_points_reward': self.calculate_delivery_cost(distance_km, weight_kg, is_fragile),  # Kurir terima 100% dari biaya
             'notes': notes,
             'claimed_at': None,
             'picked_up_at': None,
