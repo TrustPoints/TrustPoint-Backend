@@ -11,8 +11,6 @@ services:
       dockerfile: Dockerfile
     container_name: trustpoints-api
     restart: unless-stopped
-    ports:
-      - "5000:5000"
     environment:
       - FLASK_ENV=${FLASK_ENV}
       - FLASK_DEBUG=${FLASK_DEBUG}
@@ -37,8 +35,6 @@ services:
     image: mongo:7.0
     container_name: trustpoints-mongodb
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     volumes:
       - mongodb-data:/data/db
       - mongodb-config:/data/configdb
