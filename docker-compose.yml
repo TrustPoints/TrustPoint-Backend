@@ -18,6 +18,12 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS}
       - SECRET_KEY=${SECRET_KEY}
+      - HOST_URL=${HOST_URL}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backendtrustpoint.rule=Host(`${HOST_URL}`)"
+      - "traefik.http.routers.backendtrustpoint.entrypoints=https"
+      - "traefik.http.services.backendtrustpoint.loadbalancer.server.port=5000"
     depends_on:
       mongodb:
         condition: service_healthy
